@@ -6,10 +6,11 @@ Physica is a Python research foundation for physics-informed machine learning,
 differentiable differential equations, and simulated embodied dynamics. This
 repository began as a one-paragraph concept on October 13, 2026. The first
 implementation provides mechanical reference models, fixed-step and adaptive
-nonstiff ODE solvers, a reproducible Poisson PINN benchmark, and differentiable
-PyTorch dynamics.
+nonstiff ODE solvers, synthetic inverse-parameter estimation, 2D collision
+candidate detection, a bounded simulated reinforcement-learning environment,
+a reproducible Poisson PINN benchmark, and differentiable PyTorch dynamics.
 
-**Status: executable V0.2 research foundation. Not a scientifically validated
+**Status: executable V0.3 research foundation. Not a scientifically validated
 general-purpose physics engine, autonomous physical controller, or safety-rated
 simulation package.**
 
@@ -22,9 +23,9 @@ python -m pip install -e ".[test]"
 python -m pytest -q
 ```
 
-For independent SciPy DOP853 cross-checks, install `.[test,reference]`.
-The CI pipeline installs this extra separately to ensure that the reference
-comparison actually runs.
+For independent SciPy DOP853 and oscillator inverse-problem checks, install
+`.[test,reference]` (or `.[test,inverse]`). The CI pipeline installs this
+extra separately to ensure that those tests actually run.
 
 For neural differential equations and PINN training:
 
@@ -57,6 +58,15 @@ python -m physica simulate pendulum --initial 0.2 0 --t1 10 --summary-only
 
 # Cart-pole (x, x velocity, upright-angle radians, angular velocity)
 python -m physica simulate cartpole --initial 0 0 0.1 0 --t1 2 --summary-only
+
+# Demonstration of tabular Q-learning, with frozen evaluation on separate seeds
+python -m physica rl-cartpole --episodes 50 --evaluate 10 --seed 3 --max-steps 200
+
+# Fit known-mass oscillator stiffness and damping from JSON observations
+# Input JSON records: [{"time": 0, "position": 1, "sigma": 0.01}, ...]
+# Generate the explicitly synthetic noisy fixture before fitting
+python examples/synthetic_inverse_data.py > observations.json
+python -m physica inverse-oscillator --data observations.json --mass 1 --initial 1 0 --guess 2 0.1 --holdout-every 5 --source-label "synthetic example"
 
 # PyTorch PINN: -u'' = pi² sin(pi*x), u(0)=u(1)=0
 python -m physica pinn-poisson --steps 250 --seed 0
@@ -97,7 +107,10 @@ assert check.passed and order.passed
 | `physica.validation` | Energy drift and exact-reference step-halving convergence diagnostics |
 | `physica.experiment` | Reproducible JSON simulation and canonical content fingerprint |
 | `physica.learning` | PyTorch differentiable RK4, neural acceleration residual, hard-Dirichlet Poisson PINN |
-| `physica.cli` | Local simulation and PINN commands |
+| `physica.inverse` | Known-mass oscillator stiffness/damping fit, synthetic observations, disjoint holdout and local SVD sensitivity diagnostics (SciPy optional) |
+| `physica.spatial` | Independently verified 2D AABB broad-phase candidate sweep; **not** contact or rigid-body physics |
+| `physica.rl` | Simulated discrete-force cart-pole, bounded replay, auxiliary reward/state-delta targets, tabular Q-learning, frozen-seed evaluation |
+| `physica.cli` | Local simulation, inverse-fit, bounded RL, and PINN commands |
 
 ## Research and provenance
 
@@ -110,18 +123,26 @@ including DeepXDE, PhysicsNeMo, NeuralPDE, PyTorch, and torchdiffeq were
 researched for architectures and failure modes. SciPy DOP853 provides an
 independent numerical reference in the optional `reference` test extra.
 
-Read [Architecture](docs/ARCHITECTURE.md) and the
-[Adaptive solver contract](docs/ADAPTIVE_SOLVER.md) for equations, interfaces,
-error-control bounds, numerical comparisons and intended research frontiers.
+Read [Architecture](docs/ARCHITECTURE.md), the
+[Adaptive solver contract](docs/ADAPTIVE_SOLVER.md), and the
+[eleven-repository engine/RL research review](docs/ENGINE_AND_RL_RESEARCH.md)
+for bounded interfaces, numerical evidence and future integration options.
+The linked `miyosuda/unreal` project concerns DeepMind **UNREAL auxiliary-task
+reinforcement learning**, not Unreal Engine.
 
 ## Verification ceiling
 
 A green test suite establishes **software behavior for the tested subject**.
 It does *not* establish calibrated real-world predictions. PINN training
 residuals, held-out solution error, numerical convergence, physical-model
-adequacy, and deployment safety are separate questions. This V0 foundation has
-no stiff/implicit solver, dense event solver, finite-element solver, full PDE
-suite, hardware actuator interface, or physical uncertainty model.
+adequacy, and deployment safety are separate questions. The inverse fit does not establish
+global identifiability; its observation source label is caller-asserted.
+The RL baseline and reward-balanced replay sampler report no demonstrated
+training improvement or physical transfer. Spatial AABB overlaps are only
+potential candidates, not contacts.
+Physica still has no stiff/implicit solver, dense event solver, finite-element
+solver, full PDE suite, hardware actuator interface, or calibrated physical
+uncertainty model.
 
 Current source code is independently implemented. No license grant has yet
 been selected for this repository.
