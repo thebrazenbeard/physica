@@ -12,7 +12,7 @@ def test_torch_rk4_differentiates_through_parameter():
     y0 = torch.tensor([1.], dtype=torch.float64)
     tr = torch_rk4(lambda t, y: -coefficient * y, y0, t1=1., steps=40)
     assert tr.shape == (41, 1)
-    assert float(tr[-1]) == pytest.approx(math.exp(-2.), abs=1e-6)
+    assert float(tr[-1].detach()) == pytest.approx(math.exp(-2.), abs=1e-6)
     tr[-1].sum().backward()
     assert coefficient.grad is not None
     assert float(coefficient.grad) == pytest.approx(-math.exp(-2.), abs=1e-5)

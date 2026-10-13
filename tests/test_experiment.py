@@ -41,6 +41,11 @@ def test_bad_state_dimension_rejected():
         simulate("cartpole", initial=(0., 0.))
 
 
+def test_malformed_receipts_fail_closed():
+    assert not verify_receipt({"sha256": "x", "state": float("nan")})
+    assert not verify_receipt(None)
+
+
 def test_receipt_with_summary_still_valid():
     a = simulate("oscillator", initial=(1., 0.), include_trajectory=False)
     assert "trajectory" not in a

@@ -4,11 +4,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from hashlib import sha256
 from json import dumps
-from math import isfinite
 from typing import Any
 
 from . import __version__
-from .models import HarmonicOscillator, Pendulum, CartPole, controlled_cartpole
+from .models import HarmonicOscillator, Pendulum, CartPole
 from .numerics import integrate, velocity_verlet
 from .validation import energy_drift
 
@@ -79,6 +78,11 @@ def simulate(model: str, *, initial: tuple[float, ...], t1: float = 10.,
 
 
 def verify_receipt(receipt: dict) -> bool:
+    if not isinstance(receipt, dict):
+        return False
     digest = receipt.get("sha256")
     body = {k: v for k, v in receipt.items() if k != "sha256"}
-    return isinstance(digest, str) and sha256(_canonical(body)).hexdigest() == digest
+    try:
+        return isinstance(digest, str) and sha256(_canonical(body)).hexdigest() == digest
+    except (TypeError, ValueError):
+        return False

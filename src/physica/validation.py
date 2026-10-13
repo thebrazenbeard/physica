@@ -1,7 +1,7 @@
 """Claim-scoped numerical diagnostics; passing them does not validate a physical theory."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from math import isfinite, log2
 from typing import Callable
 
@@ -13,8 +13,9 @@ class EnergyReport:
     initial: float
     final: float
     max_absolute_drift: float
-    max_relative_drift: float
+    max_relative_drift: float | None
     tolerance: float
+    criterion: str
     passed: bool
 
 
@@ -27,11 +28,13 @@ def energy_drift(trajectory: Trajectory, energy: Callable[[State], float],
         raise ValueError("energy produced a nonfinite value")
     baseline = levels[0]
     drift = max(abs(e - baseline) for e in levels)
-    # Absolute energy near zero has undefined meaningful relative drift;
-    # report on a unit-energy floor, and retain absolute drift separately.
-    relative = drift / max(abs(baseline), 1.0)
+    # Relative error is undefined for zero-energy initial conditions.
+    # Use an explicitly identified absolute-energy criterion in that case.
+    relative = drift / abs(baseline) if abs(baseline) > 1e-12 else None
+    criterion = "relative" if relative is not None else "absolute"
+    passed = (relative if relative is not None else drift) <= tolerance
     return EnergyReport(baseline, levels[-1], drift, relative,
-                        tolerance, relative <= tolerance)
+                        tolerance, criterion, passed)
 
 
 @dataclass(frozen=True)

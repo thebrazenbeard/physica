@@ -5,8 +5,8 @@ of the equations imposed as training losses.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from math import pi
+from dataclasses import dataclass
+from math import pi, isfinite
 
 
 def _torch():
@@ -126,7 +126,7 @@ def neural_oscillator(*, mass: float = 1., stiffness: float = 1.,
     before treating its predictions as scientific evidence.
     """
     torch = _torch()
-    if mass <= 0 or stiffness <= 0 or damping < 0 or hidden < 2:
+    if not all(isfinite(v) for v in (mass, stiffness, damping)) or mass <= 0 or stiffness <= 0 or damping < 0 or hidden < 2:
         raise ValueError("invalid oscillator configuration")
 
     class NeuralOscillator(torch.nn.Module):

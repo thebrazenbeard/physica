@@ -45,6 +45,15 @@ def test_pendulum_energy_conservation_and_bounds():
     assert energy_drift(tr, m.energy, tolerance=1e-5).passed
 
 
+def test_zero_initial_energy_uses_absolute_criterion():
+    m = HarmonicOscillator()
+    tr = integrate(m.rhs, (0., 0.), t1=1.)
+    report = energy_drift(tr, m.energy)
+    assert report.criterion == "absolute"
+    assert report.max_relative_drift is None
+    assert report.passed
+
+
 def test_damped_oscillator_dissipates_energy():
     m = HarmonicOscillator(damping=.3)
     tr = integrate(m.rhs, (1., 0.), dt=.05, t1=8.)
