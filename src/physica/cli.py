@@ -18,7 +18,10 @@ def main(argv=None) -> int:
     p.add_argument("--initial", nargs="+", type=float, required=True)
     p.add_argument("--t1", type=float, default=10.)
     p.add_argument("--dt", type=float, default=.01)
-    p.add_argument("--method", choices=["euler", "rk4", "velocity_verlet"], default="rk4")
+    p.add_argument("--method", choices=["euler", "rk4", "rk45", "velocity_verlet"], default="rk4")
+    p.add_argument("--rtol", type=float, help="RK45 relative local-error tolerance")
+    p.add_argument("--atol", type=float, help="RK45 absolute local-error tolerance")
+    p.add_argument("--max-attempts", type=int, help="RK45 accepted + rejected step budget")
     p.add_argument("--param", action="append", default=[], metavar="NAME=VALUE")
     p.add_argument("--summary-only", action="store_true")
     p.add_argument("--out", type=Path)
@@ -39,7 +42,9 @@ def main(argv=None) -> int:
             result = simulate(args.model, initial=tuple(args.initial),
                               t1=args.t1, dt=args.dt, method=args.method,
                               parameters=values,
-                              include_trajectory=not args.summary_only)
+                              include_trajectory=not args.summary_only,
+                              rtol=args.rtol, atol=args.atol,
+                              max_attempts=args.max_attempts)
             payload = json.dumps(result, indent=2, allow_nan=False) + "\n"
             if args.out:
                 args.out.write_text(payload, encoding="utf-8")
