@@ -20,6 +20,7 @@ jobs:
       - run: python -m pytest -q
       - run: python -m physica simulate oscillator --initial 1 0 --t1 1 --dt .1 --summary-only
       - run: python -m physica simulate oscillator --initial 1 0 --t1 10 --dt 1 --method rk45 --rtol 1e-8 --summary-only
+      - run: python -m physica rl-cartpole --episodes 6 --evaluate 3 --max-steps 20
 
   scipy-reference:
     runs-on: ubuntu-latest
@@ -29,7 +30,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[test,reference]"
-      - run: python -m pytest -q tests/test_adaptive.py -rs
+      - run: python -m pytest -q tests/test_adaptive.py tests/test_inverse.py -rs
 
   torch:
     runs-on: ubuntu-latest

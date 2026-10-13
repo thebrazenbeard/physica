@@ -30,6 +30,19 @@ def main(argv=None) -> int:
     q.add_argument("--seed", type=int, default=0)
     q.add_argument("--hidden", type=int, default=24)
     q.add_argument("--collocation", type=int, default=32)
+    inv = sub.add_parser("inverse-oscillator", help="fit known-mass oscillator against observations")
+    inv.add_argument("--data", type=Path, required=True, help="JSON array of {time,position,sigma} observations")
+    inv.add_argument("--initial", nargs=2, type=float, required=True)
+    inv.add_argument("--guess", nargs=2, type=float, required=True, metavar=("STIFFNESS", "DAMPING"))
+    inv.add_argument("--mass", type=float, required=True)
+    inv.add_argument("--holdout-every", type=int, default=5)
+    inv.add_argument("--source-label", required=True, help="caller-asserted, not verified provenance")
+    inv.add_argument("--out", type=Path)
+    rl = sub.add_parser("rl-cartpole", help="synthetic tabular Q-learning cart-pole baseline")
+    rl.add_argument("--episodes", type=int, default=50)
+    rl.add_argument("--evaluate", type=int, default=10)
+    rl.add_argument("--seed", type=int, default=0)
+    rl.add_argument("--max-steps", type=int, default=200)
     args = parser.parse_args(argv)
     try:
         if args.command == "simulate":
@@ -50,12 +63,42 @@ def main(argv=None) -> int:
                 args.out.write_text(payload, encoding="utf-8")
             else:
                 sys.stdout.write(payload)
+        elif args.command == "inverse-oscillator":
+            from dataclasses import asdict
+            from .inverse import Observation, fit_oscillator
+            if args.holdout_every < 2:
+                raise ValueError("--holdout-every must be at least 2")
+            # json.loads(bytes) recognizes UTF-8/16/32 BOMs, including
+            # Windows PowerShell 5.1 UTF-16 redirected JSON output.
+            raw = json.loads(args.data.read_bytes())
+            if not isinstance(raw, list):
+                raise ValueError("--data must be a JSON observation array")
+            data = tuple(Observation(**entry) for entry in raw)
+            holdout = tuple(range(args.holdout_every - 1, len(data), args.holdout_every))
+            result = fit_oscillator(
+                data, initial=tuple(args.initial), mass=args.mass,
+                initial_guess=tuple(args.guess), holdout_indices=holdout,
+                source_label=args.source_label,
+            )
+            payload = json.dumps(asdict(result), indent=2, allow_nan=False) + "\n"
+            if args.out:
+                args.out.write_text(payload, encoding="utf-8")
+            else:
+                sys.stdout.write(payload)
+        elif args.command == "rl-cartpole":
+            from dataclasses import asdict
+            from .rl import train_tabular_cartpole
+            report = train_tabular_cartpole(
+                episodes=args.episodes, evaluation_episodes=args.evaluate,
+                seed=args.seed, max_episode_steps=args.max_steps,
+            )
+            sys.stdout.write(json.dumps(asdict(report), indent=2) + "\n")
         else:
             _, report = train_poisson(steps=args.steps, seed=args.seed,
                                       hidden=args.hidden, collocation=args.collocation)
             from dataclasses import asdict
             sys.stdout.write(json.dumps(asdict(report), indent=2) + "\n")
-    except (ValueError, TypeError, RuntimeError, FloatingPointError) as exc:
+    except (ValueError, TypeError, RuntimeError, FloatingPointError, OSError) as exc:
         print(f"physica: {exc}", file=sys.stderr)
         return 2
     return 0
