@@ -70,10 +70,18 @@ def _evaluate(rhs: RHS, t: float, state: State) -> State:
 def integrate(rhs: RHS, initial: Sequence[float], *, t0: float = 0.,
               t1: float = 10., dt: float = .01, method: str = "rk4",
               max_steps: int = 1_000_000) -> Trajectory:
-    """Fixed-step explicit Euler or classical RK4; t1 is included exactly."""
+    """Integrate using Euler, RK4, or adaptive Dormand–Prince RK45.
+
+    For RK45, `dt` is an initial step, not a fixed output cadence. Use
+    `solve_adaptive` to configure tolerances and inspect solver diagnostics.
+    """
+    if method == "rk45":
+        from .adaptive import solve_adaptive
+        return solve_adaptive(rhs, initial, t0=t0, t1=t1,
+                              dt=dt, max_attempts=max_steps).trajectory
     count, h = _steps(t0, t1, dt, max_steps)
     if method not in {"euler", "rk4"}:
-        raise ValueError("method must be 'euler' or 'rk4'")
+        raise ValueError("method must be 'euler', 'rk4', or 'rk45'")
     state = _state(initial)
     times = [float(t0)]
     states = [state]

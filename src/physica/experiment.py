@@ -1,12 +1,14 @@
-"""Deterministic experiment receipts with explicit scope, not scientific certification."""
+"""Reproducible simulation records with explicit solver and qualification scope."""
 from __future__ import annotations
 
 from dataclasses import asdict
 from hashlib import sha256
 from json import dumps
+from math import isinf
 from typing import Any
 
 from . import __version__
+from .adaptive import solve_adaptive
 from .models import HarmonicOscillator, Pendulum, CartPole
 from .numerics import integrate, velocity_verlet
 from .validation import energy_drift
@@ -21,10 +23,13 @@ def simulate(model: str, *, initial: tuple[float, ...], t1: float = 10.,
              dt: float = .01, method: str = "rk4",
              parameters: dict[str, float] | None = None,
              energy_tolerance: float = 1e-3,
-             include_trajectory: bool = True) -> dict:
-    """Return a content-addressed, reproducible numerical run record.
+             include_trajectory: bool = True,
+             rtol: float | None = None, atol: float | None = None,
+             max_attempts: int | None = None) -> dict:
+    """Return a content-addressed numerical run record, not a validation claim.
 
-    No output makes claims about real-world calibration, validation, or safety.
+    For `rk45`, `dt` is an initial guess and `effective_dt` is null;
+    accepted timestamps must be read from the trajectory.
     """
     parameters = dict(parameters or {})
     classes = {"oscillator": HarmonicOscillator, "pendulum": Pendulum,
@@ -35,15 +40,30 @@ def simulate(model: str, *, initial: tuple[float, ...], t1: float = 10.,
     needed = 4 if model == "cartpole" else 2
     if len(initial) != needed:
         raise ValueError(f"{model} expects {needed} state values")
-    if method == "velocity_verlet":
-        if model != "oscillator" or not system.conservative:
-            raise ValueError("velocity_verlet requires an undamped/unforced oscillator")
-        traj = velocity_verlet(system.acceleration, initial[:1],
-                               initial[1:], t1=t1, dt=dt)
+    adaptive = None
+    if method == "rk45":
+        options = {}
+        if rtol is not None:
+            options["rtol"] = rtol
+        if atol is not None:
+            options["atol"] = atol
+        if max_attempts is not None:
+            options["max_attempts"] = max_attempts
+        adaptive = solve_adaptive(system.rhs, initial, t1=t1, dt=dt, **options)
+        traj = adaptive.trajectory
     else:
-        traj = integrate(system.rhs, initial, t1=t1, dt=dt, method=method)
+        if rtol is not None or atol is not None or max_attempts is not None:
+            raise ValueError("adaptive solver options require method='rk45'")
+        if method == "velocity_verlet":
+            if model != "oscillator" or not system.conservative:
+                raise ValueError("velocity_verlet requires an undamped/unforced oscillator")
+            traj = velocity_verlet(system.acceleration, initial[:1],
+                                   initial[1:], t1=t1, dt=dt)
+        else:
+            traj = integrate(system.rhs, initial, t1=t1, dt=dt, method=method)
+
     result: dict = {
-        "schema": "physica.simulation.v1",
+        "schema": "physica.simulation.v2" if adaptive else "physica.simulation.v1",
         "version": __version__,
         "model": model,
         "parameters": asdict(system),
@@ -51,7 +71,7 @@ def simulate(model: str, *, initial: tuple[float, ...], t1: float = 10.,
         "t0": 0.,
         "t1": t1,
         "requested_dt": dt,
-        "effective_dt": (t1 / (len(traj.times) - 1)),
+        "effective_dt": None if adaptive else (t1 / (len(traj.times) - 1)),
         "method": method,
         "steps": len(traj.times) - 1,
         "final_state": list(traj.final),
@@ -59,16 +79,32 @@ def simulate(model: str, *, initial: tuple[float, ...], t1: float = 10.,
         "assumptions": [
             "SI units",
             "idealized equations as defined in physica.models",
-            "fixed-step explicit numerical integration",
+            ("adaptive-step explicit Dormand-Prince 5(4) local-error control"
+             if adaptive else "fixed-step explicit numerical integration"),
         ],
     }
+    if adaptive:
+        result["adaptive"] = {
+            "accepted_steps": adaptive.accepted_steps,
+            "rejected_steps": adaptive.rejected_steps,
+            "attempted_steps": adaptive.attempted_steps,
+            "evaluations": adaptive.evaluations,
+            "rtol": adaptive.rtol,
+            "atol": adaptive.atol,
+            "initial_step": adaptive.initial_step,
+            "min_step": adaptive.min_step,
+            "max_step": None if isinf(adaptive.max_step) else adaptive.max_step,
+        }
     if model != "cartpole":
         if system.conservative:
-            report = energy_drift(traj, system.energy, tolerance=energy_tolerance)
-            result["energy_check"] = asdict(report)
+            result["energy_check"] = asdict(
+                energy_drift(traj, system.energy, tolerance=energy_tolerance)
+            )
         else:
             result["energy_check"] = None
-            result["energy_check_explanation"] = "External work/dissipation: constant energy is not expected."
+            result["energy_check_explanation"] = (
+                "External work/dissipation: constant energy is not expected."
+            )
     if include_trajectory:
         result["trajectory"] = [
             {"time": t, "state": list(s)} for t, s in zip(traj.times, traj.states)

@@ -69,7 +69,8 @@ unjustified, error-prone, and in some cases cross private/public boundaries.
 - **Analytic exact case:** harmonic oscillator, selected constant-coefficient
   cases, 1D Poisson equation. Exact only under the modeled assumptions.
 - **Numerical implementation:** Euler, classical RK4, velocity Verlet
-  (position-only acceleration). Fixed-step and nonstiff only.
+  (position-only acceleration), plus explicit Dormand–Prince 5(4) adaptive
+  integration with local error control. All methods are nonstiff.
 - **Training result:** reproducible PyTorch CPU Poisson residual optimization;
   raw residual, boundary error and held-out solution error.
 - **Embodied model:** idealized cart-pole differential equations with explicit
@@ -79,10 +80,12 @@ unjustified, error-prone, and in some cases cross private/public boundaries.
 
 ## Known limitations and falsification plan
 
-1. No stiff/DAE/adaptive integration, collision/contact, finite elements,
-   electromagnetics, thermal or fluid PDE solver yet.
-2. Fixed-step integration may become unstable. Compare timestep refinements,
-   energy drift and analytic trajectories before trusting output.
+1. No stiff/DAE/implicit methods, adaptive dense output, event roots,
+   collision/contact, finite elements, electromagnetics, thermal or fluid PDE
+   solver yet. Adaptive RK45 is explicit, nonstiff and locally controlled.
+2. Explicit integration may become unstable. Compare solver families, local
+   tolerances, time resolution, energy drift and analytic trajectories before
+   trusting output.
 3. Conservation checks are **inapplicable** when there is damping or external
    forcing. Track external work/dissipation before asserting an energy ledger.
 4. PINNs can converge on training residual but remain wrong on unobserved
@@ -95,9 +98,13 @@ unjustified, error-prone, and in some cases cross private/public boundaries.
 8. Content hashes detect changes relative to a trusted recorded hash; attackers
    can recompute both payload and digest. They prove neither origin nor truth.
 
-Suggested next frontier: a controlled inverse-problem suite with frozen synthetic
-train/holdout partitions, scipy.solve_ivp comparison, stiff benchmark, parameter
-identifiability measurement, units validation and checkpointed experiment manifests.
+The V0.2 [adaptive solver review](ADAPTIVE_SOLVER.md) documents SciPy
+DOP853 cross-implementation checks. These establish numerical agreement on
+specified initial-value problems, not validated physical models.
+
+Suggested next frontier: inverse problems with frozen synthetic train/holdout
+partitions, stiff/implicit benchmark, parameter identifiability measurement,
+units validation and checkpointed experiment manifests.
 
 ## Licensing boundary
 

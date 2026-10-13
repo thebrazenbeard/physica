@@ -5,11 +5,11 @@
 Physica is a Python research foundation for physics-informed machine learning,
 differentiable differential equations, and simulated embodied dynamics. This
 repository began as a one-paragraph concept on October 13, 2026. The first
-implementation provides transparent mechanical reference models, fixed-step
-numerical solvers, a reproducible Poisson PINN benchmark, and differentiable
+implementation provides mechanical reference models, fixed-step and adaptive
+nonstiff ODE solvers, a reproducible Poisson PINN benchmark, and differentiable
 PyTorch dynamics.
 
-**Status: executable V0 research foundation. Not a scientifically validated
+**Status: executable V0.2 research foundation. Not a scientifically validated
 general-purpose physics engine, autonomous physical controller, or safety-rated
 simulation package.**
 
@@ -21,6 +21,10 @@ Python 3.11+:
 python -m pip install -e ".[test]"
 python -m pytest -q
 ```
+
+For independent SciPy DOP853 cross-checks, install `.[test,reference]`.
+The CI pipeline installs this extra separately to ensure that the reference
+comparison actually runs.
 
 For neural differential equations and PINN training:
 
@@ -38,7 +42,11 @@ optional dependency; the corresponding tests skip when unavailable.
 # SI units; state = position in meters, velocity in meters/second
 python -m physica simulate oscillator --initial 1 0 --t1 6.2831853 --dt 0.02 --summary-only
 
-# Energy-preserving velocity-Verlet integrator: undamped, unforced oscillator only
+# Adaptive Dormand-Prince 5(4): dt is an initial guess, not a sampling interval
+python -m physica simulate oscillator --initial 1 0 --t1 40 --dt 1 --method rk45 --rtol 1e-9 --atol 1e-12 --summary-only
+
+# Symplectic velocity-Verlet (bounded drift, not exact energy preservation)
+# Applies to an undamped, unforced oscillator only
 python -m physica simulate oscillator --initial 1 0 --t1 100 --dt 0.03 --method velocity_verlet --summary-only
 
 # Nonconservative system: conserved-energy check explicitly inapplicable
@@ -60,7 +68,9 @@ python examples/neural_oscillator.py
 Leave off `--summary-only` to include every simulated timestep. Add
 `--out results.json` to save JSON. Every simulation has a SHA-256 content
 fingerprint, exact configuration, method, initial/final state, declared
-assumptions and a qualification ceiling. **This digest proves neither
+assumptions and a qualification ceiling. Adaptive runs record accepted and
+rejected steps, RHS evaluation count and error tolerances under the V2 receipt
+schema; they return nonuniform timestamps and do not claim a fixed output dt. **This digest proves neither
 authenticity nor physical truth.**
 
 ## Library
@@ -82,6 +92,7 @@ assert check.passed and order.passed
 | Module | Included |
 | --- | --- |
 | `physica.numerics` | Explicit Euler, classical RK4, velocity Verlet for velocity-independent acceleration, strict input guards |
+| `physica.adaptive` | Dormand–Prince RK45 with weighted-RMS error control, accepted/rejected step counts, minimum step and attempt guards |
 | `physica.models` | Harmonic oscillator, nonlinear pendulum, idealized cart-pole with explicit external force |
 | `physica.validation` | Energy drift and exact-reference step-halving convergence diagnostics |
 | `physica.experiment` | Reproducible JSON simulation and canonical content fingerprint |
@@ -96,10 +107,12 @@ outside this public repository. Relevant *public* donor ideas are traced in
 [Research and provenance](docs/RESEARCH_AND_PROVENANCE.md), with source commit
 bindings; no proprietary portfolio code was copied. External frameworks
 including DeepXDE, PhysicsNeMo, NeuralPDE, PyTorch, and torchdiffeq were
-researched for architectures and failure modes.
+researched for architectures and failure modes. SciPy DOP853 provides an
+independent numerical reference in the optional `reference` test extra.
 
-Read [Architecture](docs/ARCHITECTURE.md) for equations, interfaces,
-assumptions, evidence boundaries and intended next research frontier.
+Read [Architecture](docs/ARCHITECTURE.md) and the
+[Adaptive solver contract](docs/ADAPTIVE_SOLVER.md) for equations, interfaces,
+error-control bounds, numerical comparisons and intended research frontiers.
 
 ## Verification ceiling
 
@@ -107,8 +120,8 @@ A green test suite establishes **software behavior for the tested subject**.
 It does *not* establish calibrated real-world predictions. PINN training
 residuals, held-out solution error, numerical convergence, physical-model
 adequacy, and deployment safety are separate questions. This V0 foundation has
-no stiff solver, finite-element solver, full PDE suite, hardware actuator
-interface, or physical uncertainty model.
+no stiff/implicit solver, dense event solver, finite-element solver, full PDE
+suite, hardware actuator interface, or physical uncertainty model.
 
 Current source code is independently implemented. No license grant has yet
 been selected for this repository.

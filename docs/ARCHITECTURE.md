@@ -1,9 +1,10 @@
-# Physica V0 architecture
+# Physica V0.2 architecture
 
 ```text
 CLI -> experiment (model + solver + receipt)
             |          |
-          models -> numerics (pure Python reference integration)
+          models -> numerics (Euler, RK4, velocity Verlet)
+            |           adaptive (explicit RK45, nonuniform time grid)
             |          |
             +------> validation (energy, convergence, analytic comparands)
             |
@@ -47,10 +48,12 @@ as **half** the pole's physical length.
 
 ## Reproduction and qualification
 
-Install the package and run `python -m pytest -q`. Baseline scientific
-comparisons are exercised by `tests/test_numerics.py`. Optional Torch
-neural tests are skipped when `torch` is not installed; CI exercises both
-baseline and Torch jobs.
+Install the package and run `python -m pytest -q`. Fixed-step comparisons
+are in `tests/test_numerics.py`, adaptive-error-control and SciPy DOP853
+comparison in `tests/test_adaptive.py`. Torch tests skip without `torch`;
+the SciPy cross-reference test skips locally without `scipy`, but CI installs
+both dependencies in dedicated jobs. Read [adaptive solver contract](ADAPTIVE_SOLVER.md)
+for step-rejection, tolerance and evidence limitations.
 
 Receipt digest is over canonical JSON excluding the digest itself. The schema
 version scopes interpretation. It is not a cryptographically signed record.
