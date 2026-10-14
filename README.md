@@ -146,3 +146,21 @@ uncertainty model.
 
 Current source code is independently implemented. No license grant has yet
 been selected for this repository.
+
+## Swept broad-phase candidates
+
+`physica.spatial.swept_broad_phase_pairs(bounds, displacements)` accepts the
+same immutable 2D `AABB` values as `broad_phase_pairs`, plus **exactly one**
+finite displacement tuple per box identifier. Linear translation envelopes
+are swept through one abstract step. The algorithm returns sorted candidate
+ID pairs, conservatively enclosing possible overlap at any intermediate time.
+It is deterministic and side-effect free.
+
+This is **not** time-of-impact, real contacts, impulse dynamics, or a collision
+response solver. Its envelope can report pairs that never coincide in time.
+No physical-world effect or ARK runtime binding is authorized.
+
+The randomized oracle samples 21 instants in multiple moving-body scenes
+and checks that every independent sampled overlap is included in candidates.
+The sampling is evidence for the tested configurations, not a formal proof of
+all continuous trajectories.
