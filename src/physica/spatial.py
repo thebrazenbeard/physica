@@ -104,3 +104,66 @@ def swept_broad_phase_pairs(
              max(box.upper[1], end_upper[1])),
         ))
     return broad_phase_pairs(envelopes)
+
+
+@dataclass(frozen=True)
+class SweptAABBInterval:
+    """Closed normalized-time interval of two linearly translating AABBs."""
+    pair: tuple[str, str]
+    enter_time: float
+    exit_time: float
+
+
+def swept_aabb_intervals(
+    bounds: Sequence[AABB],
+    displacements: dict[str, tuple[float, float]],
+) -> tuple[SweptAABBInterval, ...]:
+    """Exact overlap-time intervals for axis-aligned boxes translating linearly.
+
+    Displacements describe each box's change from normalized t=0 to t=1.
+    Touching counts as overlap. This computes AABB interval intersections,
+    not arbitrary-shape collision, penetration response, or rigid-body physics.
+    It does not represent object rotation or actual gameplay collision.
+    """
+    items = _validate(bounds)
+    if not isinstance(displacements, dict) or set(displacements) != {
+        box.id for box in items
+    }:
+        raise ValueError("displacements must match the exact AABB ID set")
+    vectors: dict[str, tuple[float, float]] = {}
+    for box in items:
+        velocity = displacements[box.id]
+        if (not isinstance(velocity, (tuple, list))
+                or len(velocity) != 2
+                or any(type(v) not in (int, float) for v in velocity)
+                or any(not isfinite(v) for v in velocity)):
+            raise ValueError("each AABB requires a finite numeric 2D displacement")
+        vectors[box.id] = (float(velocity[0]), float(velocity[1]))
+
+    hits: list[SweptAABBInterval] = []
+    for i, left in enumerate(items):
+        for right in items[i+1:]:
+            enter, exit_ = 0., 1.
+            for axis in (0, 1):
+                relative = vectors[left.id][axis] - vectors[right.id][axis]
+                if not isfinite(relative):
+                    raise ValueError("relative motion overflow")
+                if relative == 0.:
+                    if (left.lower[axis] > right.upper[axis]
+                            or right.lower[axis] > left.upper[axis]):
+                        enter, exit_ = 1., -1.
+                        break
+                    continue
+                lo = (right.lower[axis] - left.upper[axis]) / relative
+                hi = (right.upper[axis] - left.lower[axis]) / relative
+                if not (isfinite(lo) and isfinite(hi)):
+                    raise ValueError("overlap-time arithmetic overflow")
+                enter = max(enter, min(lo, hi))
+                exit_ = min(exit_, max(lo, hi))
+                if enter > exit_:
+                    break
+            if enter <= exit_:
+                hits.append(SweptAABBInterval(
+                    tuple(sorted((left.id, right.id))), enter, exit_,
+                ))
+    return tuple(sorted(hits, key=lambda item: item.pair))
