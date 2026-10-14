@@ -1,6 +1,7 @@
 """Deterministic 2D broad-phase AABB collision *candidates*, not contacts."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 from typing import Sequence
@@ -65,3 +66,41 @@ def brute_force_pairs(bounds: Sequence[AABB]) -> tuple[tuple[str, str], ...]:
                 and right.lower[1] <= left.upper[1]):
                 pairs.append(tuple(sorted((left.id, right.id))))
     return tuple(sorted(pairs))
+
+
+def swept_broad_phase_pairs(
+    bounds: Sequence[AABB],
+    displacements: Mapping[str, tuple[float, float]],
+) -> tuple[tuple[str, str], ...]:
+    """Conservative moving 2D AABB *candidates*, not contacts or impact times.
+
+    Each AABB translates linearly by its displacement over one abstract step.
+    The union of starting/ending axis bounds encloses every intermediate AABB.
+    Applying broad_phase_pairs to these envelopes cannot miss a simultaneous
+    overlap, but it may include pairs that never overlap at the same instant.
+    No movement, collision resolution or state mutation is performed.
+    """
+    items = _validate(bounds)
+    ids = {box.id for box in items}
+    if not isinstance(displacements, Mapping) or set(displacements) != ids:
+        raise ValueError("displacements must exactly match AABB IDs")
+    envelopes: list[AABB] = []
+    for box in items:
+        motion = displacements[box.id]
+        if (type(motion) is not tuple or len(motion) != 2
+                or any(type(v) not in (int, float) or not isfinite(v)
+                       for v in motion)):
+            raise ValueError("displacement must be a finite 2D tuple")
+        dx, dy = motion
+        end_lower = (box.lower[0] + dx, box.lower[1] + dy)
+        end_upper = (box.upper[0] + dx, box.upper[1] + dy)
+        if any(not isfinite(v) for v in end_lower + end_upper):
+            raise ValueError("translated AABB bounds must remain finite")
+        envelopes.append(AABB(
+            box.id,
+            (min(box.lower[0], end_lower[0]),
+             min(box.lower[1], end_lower[1])),
+            (max(box.upper[0], end_upper[0]),
+             max(box.upper[1], end_upper[1])),
+        ))
+    return broad_phase_pairs(envelopes)
