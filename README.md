@@ -160,6 +160,22 @@ This is **not** time-of-impact, real contacts, impulse dynamics, or a collision
 response solver. Its envelope can report pairs that never coincide in time.
 No physical-world effect or ARK runtime binding is authorized.
 
+### Analytic simultaneous overlap intervals (separate from broad-phase)
+
+`physica.spatial.swept_aabb_intervals(bounds, displacements)` solves
+closed entry/exit time intervals over normalized `t=0..1` for pairs of
+linearly translating 2D AABBs. It uses relative velocity on each axis,
+intersects each axis' simultaneous time range, counts boundary touching,
+and rejects nonfinite or incomplete motion. Unlike swept envelopes, it
+does not report pairs that only visit the same regions at different times.
+
+The result is an exact overlap interval **for the assumed axis-aligned
+linear box model**, not geometric collision for rotated/irregular shapes,
+actual impact dynamics, rigid-body response, hardware or ARK behavior.
+The algorithm is intentionally quadratic and suited to small scenes /
+narrow-phase validation after a conservative broad-phase candidate pass.
+
+
 The randomized oracle samples 21 instants in multiple moving-body scenes
 and checks that every independent sampled overlap is included in candidates.
 The sampling is evidence for the tested configurations, not a formal proof of
