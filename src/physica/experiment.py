@@ -120,5 +120,5 @@ def verify_receipt(receipt: dict) -> bool:
     body = {k: v for k, v in receipt.items() if k != "sha256"}
     try:
         return isinstance(digest, str) and sha256(_canonical(body)).hexdigest() == digest
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         return False
