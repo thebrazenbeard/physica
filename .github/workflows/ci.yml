@@ -30,6 +30,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[test,reference]"
+      # The reference tests use importorskip; missing SciPy must not pass CI.
+      - run: python -c "import scipy.integrate; import numpy"
       - run: python -m pytest -q tests/test_adaptive.py tests/test_inverse.py -rs
 
   torch:
@@ -40,4 +42,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[all]"
+      # The learning tests use importorskip; missing Torch must not pass CI.
+      - run: python -c "import torch"
       - run: python -m pytest -q
+
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip wheel --no-deps . --wheel-dir dist
+      - name: Install and exercise the non-editable wheel outside the source tree
+        run: |
+          python -m venv "$RUNNER_TEMP/physica-wheel"
+          "$RUNNER_TEMP/physica-wheel/bin/python" -m pip install dist/physica-*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/physica-wheel/bin/python" -c 'import physica, sys; from pathlib import Path; assert Path(physica.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())'
+          "$RUNNER_TEMP/physica-wheel/bin/python" -m physica simulate oscillator --initial 1 0 --t1 1 --dt .1 --summary-only > "$RUNNER_TEMP/physica-receipt.json"
+          "$RUNNER_TEMP/physica-wheel/bin/python" -c 'import json, os; from physica.experiment import verify_receipt; receipt = json.load(open(os.environ["RUNNER_TEMP"] + "/physica-receipt.json", encoding="utf-8")); assert receipt["model"] == "oscillator" and verify_receipt(receipt)'
