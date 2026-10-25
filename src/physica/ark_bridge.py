@@ -24,10 +24,16 @@ class MotionCalibration:
     y_axis: tuple[float, float]
 
     def __post_init__(self) -> None:
-        if (len(self.x_axis) != 2 or len(self.y_axis) != 2
+        # A frozen dataclass does not freeze mutable values supplied by callers.
+        # Snapshot each axis so subsequent list mutation cannot alter a prediction.
+        x_axis = tuple(self.x_axis)
+        y_axis = tuple(self.y_axis)
+        if (len(x_axis) != 2 or len(y_axis) != 2
                 or any(type(v) not in (int, float) or not isfinite(v)
-                       for v in self.x_axis + self.y_axis)):
+                       for v in x_axis + y_axis)):
             raise ValueError("calibration must contain four finite real numbers")
+        object.__setattr__(self, "x_axis", x_axis)
+        object.__setattr__(self, "y_axis", y_axis)
 
 
 @dataclass(frozen=True)
@@ -58,43 +64,49 @@ def predict_ark_move(
         "step", "action_type", "x", "y", "duration_ms", "reason",
         "planner", "created_at", "dry_run",
     }
-    if not isinstance(action, Mapping) or set(action) != fields:
+    if not isinstance(action, Mapping):
         raise ValueError("expected exact VERA ARK V1 intention fields")
-    if action["schema_version"] != "VERA_ARK_ACTION_INTENTION_V1":
+    # A custom Mapping can return different values on successive reads. Take one
+    # snapshot, then validate and compute solely from the validated values.
+    values = dict(action)
+    if set(values) != fields:
+        raise ValueError("expected exact VERA ARK V1 intention fields")
+    if values["schema_version"] != "VERA_ARK_ACTION_INTENTION_V1":
         raise ValueError("unsupported action schema")
-    if action["dry_run"] is not True or action["action_type"] != "MOVE":
+    if values["dry_run"] is not True or values["action_type"] != "MOVE":
         raise ValueError("only dry-run MOVE intentions can be predicted")
     for name in ("x", "y"):
-        v = action[name]
+        v = values[name]
         if type(v) not in (int, float) or not isfinite(v) or not -1 <= v <= 1:
             raise ValueError(f"{name} must be finite and within [-1,1]")
-    duration = action["duration_ms"]
+    duration = values["duration_ms"]
     if type(duration) is not int or not 0 <= duration <= 1000:
         raise ValueError("duration_ms must be an integer within [0,1000]")
-    if type(action["step"]) is not int or not 0 <= action["step"] <= 1_000_000:
+    if type(values["step"]) is not int or not 0 <= values["step"] <= 1_000_000:
         raise ValueError("invalid step")
     if not isinstance(calibration, MotionCalibration):
         raise ValueError("explicit MotionCalibration required")
-    if (len(position_m) != 2 or
-            any(type(v) not in (int, float) or not isfinite(v) for v in position_m)):
+    position = tuple(position_m)
+    if (len(position) != 2 or
+            any(type(v) not in (int, float) or not isfinite(v) for v in position)):
         raise ValueError("position_m must be two finite numbers")
     if type(radius_m) not in (int, float) or not isfinite(radius_m) or radius_m < 0:
         raise ValueError("radius_m must be nonnegative and finite")
     dt = duration / 1000.0
     end = (
-        position_m[0] + dt * (action["x"] * calibration.x_axis[0] +
-                               action["y"] * calibration.y_axis[0]),
-        position_m[1] + dt * (action["x"] * calibration.x_axis[1] +
-                               action["y"] * calibration.y_axis[1]),
+        position[0] + dt * (values["x"] * calibration.x_axis[0] +
+                            values["y"] * calibration.y_axis[0]),
+        position[1] + dt * (values["x"] * calibration.x_axis[1] +
+                            values["y"] * calibration.y_axis[1]),
     )
     if any(not isfinite(v) for v in end):
         raise ValueError("predicted position overflow")
     swept = AABB("__ark_motion__", (
-        min(position_m[0], end[0]) - radius_m,
-        min(position_m[1], end[1]) - radius_m,
+        min(position[0], end[0]) - radius_m,
+        min(position[1], end[1]) - radius_m,
     ), (
-        max(position_m[0], end[0]) + radius_m,
-        max(position_m[1], end[1]) + radius_m,
+        max(position[0], end[0]) + radius_m,
+        max(position[1], end[1]) + radius_m,
     ))
     if any(box.id == swept.id for box in obstacles):
         raise ValueError("reserved obstacle identifier")
@@ -102,6 +114,6 @@ def predict_ark_move(
     hits = tuple(sorted(b if a == swept.id else a
                         for a, b in pairs if swept.id in (a, b)))
     return MotionCandidate(
-        (float(position_m[0]), float(position_m[1])),
+        (float(position[0]), float(position[1])),
         end, dt, hits,
     )
