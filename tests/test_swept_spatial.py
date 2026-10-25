@@ -1,5 +1,6 @@
 """Swept translation candidates: independent sampled-time adversarial checks."""
 from itertools import combinations
+from fractions import Fraction
 from random import Random
 
 import pytest
@@ -99,3 +100,39 @@ def test_input_objects_and_motion_map_not_modified():
 
 def test_empty_world_has_empty_candidate_set():
     assert swept_broad_phase_pairs((), {}) == ()
+
+
+def test_large_exact_integer_endpoint_touch_is_not_pruned_by_float_addition():
+    q = 2**53
+    a = AABB("a", (q + 1, 0), (q + 1, 1))
+    b = AABB("b", (q + 2, 0), (q + 2, 1))
+    # Mathematically the one-unit displacement touches b at t=1.
+    # float(q+1) rounds *down*, so naive int+float misses the endpoint.
+    assert swept_broad_phase_pairs((a, b), {"a": (1., 0.), "b": (0., 0.)}) == (("a", "b"),)
+
+
+def test_large_integer_positive_width_boxes_touch_at_end_of_sweep():
+    q = 2**53
+    a = AABB("a", (q, 0), (q + 1, 1))
+    b = AABB("b", (q + 2, 0), (q + 3, 1))
+    assert swept_broad_phase_pairs((a, b), {"a": (1., 0.), "b": (0., 0.)}) == (("a", "b"),)
+
+
+def test_large_integer_sweep_conservatively_contains_exact_sampled_contacts():
+    q = 2**53
+    for displacement in (-3., -2., -1., 0., 1., 2., 3.):
+        for offset in (-3, -2, -1, 0, 1, 2, 3):
+            a = AABB("a", (q + 1, 0), (q + 1, 1))
+            b = AABB("b", (q + 1 + offset, 0), (q + 1 + offset, 1))
+            candidates = swept_broad_phase_pairs(
+                (a, b), {"a": (displacement, 0.), "b": (0., 0.)})
+            for time in (Fraction(0), Fraction(1, 2), Fraction(1)):
+                x = Fraction(a.lower[0]) + Fraction(displacement) * time
+                if x == Fraction(b.lower[0]):
+                    assert ("a", "b") in candidates
+
+
+def test_extreme_integer_displacement_has_stable_validation_error():
+    a = AABB("a", (0, 0), (1, 1))
+    with pytest.raises(ValueError, match="finite"):
+        swept_broad_phase_pairs((a,), {"a": (10**1000, 0.)})

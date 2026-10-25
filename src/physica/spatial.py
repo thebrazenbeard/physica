@@ -102,26 +102,49 @@ def swept_broad_phase_pairs(
     ids = {box.id for box in items}
     if not isinstance(displacements, Mapping) or set(displacements) != ids:
         raise ValueError("displacements must exactly match AABB IDs")
-    envelopes: list[AABB] = []
+    # Keep the swept bounds exact. Python silently rounds a large int when it
+    # is added to a float displacement (e.g. 2**53+1 + 1.0), which can shrink
+    # an envelope and make a supposedly conservative broad phase miss a pair.
+    # Tuples are (id, x_min, y_min, x_max, y_max) in exact rational values.
+    envelopes: list[tuple[str, Fraction, Fraction, Fraction, Fraction]] = []
     for box in items:
         motion = displacements[box.id]
-        if (type(motion) is not tuple or len(motion) != 2
-                or any(type(v) not in (int, float) or not isfinite(v)
-                       for v in motion)):
+        if type(motion) is not tuple or len(motion) != 2:
             raise ValueError("displacement must be a finite 2D tuple")
-        dx, dy = motion
-        end_lower = (box.lower[0] + dx, box.lower[1] + dy)
-        end_upper = (box.upper[0] + dx, box.upper[1] + dy)
-        if any(not isfinite(v) for v in end_lower + end_upper):
+        try:
+            finite_motion = all(type(v) in (int, float) and isfinite(v)
+                                for v in motion)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("displacement must be a finite 2D tuple") from exc
+        if not finite_motion:
+            raise ValueError("displacement must be a finite 2D tuple")
+
+        delta = tuple(Fraction(v) for v in motion)
+        lower = tuple(Fraction(v) for v in box.lower)
+        upper = tuple(Fraction(v) for v in box.upper)
+        end_lower = tuple(lower[axis] + delta[axis] for axis in (0, 1))
+        end_upper = tuple(upper[axis] + delta[axis] for axis in (0, 1))
+        try:
+            finite_endpoints = all(isfinite(float(v))
+                                   for v in end_lower + end_upper)
+        except (ValueError, OverflowError) as exc:
+            raise ValueError("translated AABB bounds must remain finite") from exc
+        if not finite_endpoints:
             raise ValueError("translated AABB bounds must remain finite")
-        envelopes.append(AABB(
+        envelopes.append((
             box.id,
-            (min(box.lower[0], end_lower[0]),
-             min(box.lower[1], end_lower[1])),
-            (max(box.upper[0], end_upper[0]),
-             max(box.upper[1], end_upper[1])),
+            min(lower[0], end_lower[0]), min(lower[1], end_lower[1]),
+            max(upper[0], end_upper[0]), max(upper[1], end_upper[1]),
         ))
-    return broad_phase_pairs(envelopes)
+    active: list[tuple[str, Fraction, Fraction, Fraction, Fraction]] = []
+    candidates: set[tuple[str, str]] = set()
+    for current in sorted(envelopes, key=lambda row: (row[1], row[0])):
+        active = [prior for prior in active if prior[3] >= current[1]]
+        for prior in active:
+            if prior[2] <= current[4] and current[2] <= prior[4]:
+                candidates.add(tuple(sorted((prior[0], current[0]))))
+        active.append(current)
+    return tuple(sorted(candidates))
 
 
 @dataclass(frozen=True)
