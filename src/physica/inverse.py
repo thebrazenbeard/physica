@@ -7,7 +7,7 @@ SciPy and NumPy are optional dependencies, imported only for fitting.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, cosh, exp, hypot, isfinite, sin, sinh, sqrt
+from math import cos, exp, expm1, hypot, isfinite, sin, sqrt
 from random import Random
 from typing import Sequence
 
@@ -75,7 +75,15 @@ def _analytic_displacement(
         return exp(-decay * time) * (x0 * cos(w * time) + core * sin(w * time) / w)
     if disc < 0:
         w = sqrt(-disc)
-        return exp(-decay * time) * (x0 * cosh(w * time) + core * sinh(w * time) / w)
+        # Factor out the slow eigenmode: cosh(w*t) and sinh(w*t) overflow
+        # separately for strongly overdamped, long-running trajectories even
+        # when the physical displacement remains finite. The rationalized
+        # slow rate also avoids subtracting two nearly equal large rates.
+        slow_rate = -(stiffness / mass) / (decay + w)
+        fast_fraction = -.5 * expm1(-2. * w * time)
+        return exp(slow_rate * time) * (
+            x0 * (1. - fast_fraction) + (core / w) * fast_fraction
+        )
     return exp(-decay * time) * (x0 + core * time)
 
 
