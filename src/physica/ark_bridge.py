@@ -13,6 +13,21 @@ from typing import Mapping, Any, Sequence
 from .spatial import AABB, broad_phase_pairs
 
 
+def _finite_real(value: object) -> bool:
+    """Validate an input as a finite real representable by this float model.
+
+    ``math.isfinite`` converts integers to float, raising ``OverflowError``
+    for otherwise valid Python integers outside the binary64 range. Invalid
+    externally supplied values must fail validation, not escape as an error.
+    """
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
 @dataclass(frozen=True)
 class MotionCalibration:
     """World velocity in metres/second per normalized stick axis.
@@ -29,8 +44,7 @@ class MotionCalibration:
         x_axis = tuple(self.x_axis)
         y_axis = tuple(self.y_axis)
         if (len(x_axis) != 2 or len(y_axis) != 2
-                or any(type(v) not in (int, float) or not isfinite(v)
-                       for v in x_axis + y_axis)):
+                or not all(_finite_real(v) for v in x_axis + y_axis)):
             raise ValueError("calibration must contain four finite real numbers")
         object.__setattr__(self, "x_axis", x_axis)
         object.__setattr__(self, "y_axis", y_axis)
@@ -77,7 +91,7 @@ def predict_ark_move(
         raise ValueError("only dry-run MOVE intentions can be predicted")
     for name in ("x", "y"):
         v = values[name]
-        if type(v) not in (int, float) or not isfinite(v) or not -1 <= v <= 1:
+        if not _finite_real(v) or not -1 <= v <= 1:
             raise ValueError(f"{name} must be finite and within [-1,1]")
     duration = values["duration_ms"]
     if type(duration) is not int or not 0 <= duration <= 1000:
@@ -88,9 +102,9 @@ def predict_ark_move(
         raise ValueError("explicit MotionCalibration required")
     position = tuple(position_m)
     if (len(position) != 2 or
-            any(type(v) not in (int, float) or not isfinite(v) for v in position)):
+            not all(_finite_real(v) for v in position)):
         raise ValueError("position_m must be two finite numbers")
-    if type(radius_m) not in (int, float) or not isfinite(radius_m) or radius_m < 0:
+    if not _finite_real(radius_m) or radius_m < 0:
         raise ValueError("radius_m must be nonnegative and finite")
     dt = duration / 1000.0
     end = (

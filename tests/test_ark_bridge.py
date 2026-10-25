@@ -52,6 +52,29 @@ def test_requires_calibration_and_bounds():
                          obstacles=(AABB("__ark_motion__", (0, 0), (1, 1)),))
 
 
+def test_huge_integer_calibration_is_rejected_as_invalid_input():
+    # Python math.isfinite() raises OverflowError for ints beyond binary64.
+    with pytest.raises(ValueError, match="calibration"):
+        MotionCalibration((10**1000, 0), (0, 1))
+
+
+@pytest.mark.parametrize("input_case", ["stick", "position", "radius"])
+def test_huge_integer_move_inputs_fail_closed(input_case):
+    move = intention()
+    position = (0, 0)
+    radius = 0
+    if input_case == "stick":
+        move["x"] = 10**1000
+    elif input_case == "position":
+        position = (10**1000, 0)
+    else:
+        radius = 10**1000
+    with pytest.raises(ValueError):
+        predict_ark_move(move, position_m=position,
+                         calibration=MotionCalibration((1, 0), (0, 1)),
+                         radius_m=radius)
+
+
 def test_intention_mapping_cannot_change_stick_after_validation():
     class ChangingX(Mapping):
         def __init__(self):
