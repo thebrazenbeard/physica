@@ -107,6 +107,34 @@ def test_reproducible_seeded_noisy_synthetic_data():
                for x,y in zip(a, synthetic_oscillator_observations(**{**opts, "seed":28})))
 
 
+@pytest.mark.parametrize("initial", [(1., 0.), (0., 1.)])
+def test_overdamped_analytic_generator_stays_finite_for_long_times(initial):
+    """Compare the idealized reference to an independent matrix exponential."""
+    import numpy as np
+    from scipy.linalg import expm
+
+    times = (0., 1., 10., 100.)
+    samples = synthetic_oscillator_observations(
+        times=times, mass=1., stiffness=1., damping=100.,
+        initial=initial, noise=False,
+    )
+    linear_system = np.array([[0., 1.], [-1., -100.]])
+    for sample in samples:
+        expected = (expm(linear_system * sample.time) @ np.array(initial))[0]
+        assert math.isfinite(sample.position)
+        assert sample.position == pytest.approx(expected, rel=1e-10, abs=1e-13)
+
+
+def test_overdamped_analytic_generator_continuous_near_critical_damping():
+    samples = synthetic_oscillator_observations(
+        times=(0., .1, 1., 3.), mass=1., stiffness=1.,
+        damping=2. * (1. + 1e-12), initial=(1., 0.), noise=False,
+    )
+    for sample in samples:
+        critical_limit = math.exp(-sample.time) * (1. + sample.time)
+        assert sample.position == pytest.approx(critical_limit, abs=1e-11)
+
+
 def test_documented_synthetic_dataset_generator():
     import json
     import subprocess
