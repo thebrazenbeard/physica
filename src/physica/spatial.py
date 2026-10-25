@@ -132,15 +132,22 @@ def swept_aabb_intervals(
     responses, or calibrated time-of-impact predictions.
     """
     items = _validate(bounds)
-    # Reuse the conservative envelope implementation for exact key/shape,
-    # finiteness and translated-endpoint validation before doing pair math.
-    candidates = swept_broad_phase_pairs(items, displacements)
+    ids = {box.id for box in items}
+    if not isinstance(displacements, Mapping) or set(displacements) != ids:
+        raise ValueError("displacements must exactly match AABB IDs")
+    # A Mapping may compute values dynamically. Capture each immutable motion
+    # tuple once so validation, broad-phase pruning and exact pair geometry
+    # refer to the same observed trajectory for the entire calculation.
+    motions = {box.id: displacements[box.id] for box in items}
+    # Reuse the conservative envelope implementation for finite motion,
+    # tuple shape and translated-endpoint validation before doing pair math.
+    candidates = swept_broad_phase_pairs(items, motions)
     by_id = {box.id: box for box in items}
     result: list[SweptAABBInterval] = []
 
     for left_id, right_id in candidates:
         left, right = by_id[left_id], by_id[right_id]
-        left_delta, right_delta = displacements[left_id], displacements[right_id]
+        left_delta, right_delta = motions[left_id], motions[right_id]
         enter, exit = Fraction(0), Fraction(1)
         possible = True
 
