@@ -104,7 +104,9 @@ def solve_adaptive(
         h = min(h, remaining, max_step)
         if t + h <= t:
             raise RuntimeError("adaptive solver cannot advance floating-point time")
-        if h < min_step and remaining > min_step:
+        # A sub-minimum step is allowed only when it consumes the entire
+        # remaining interval, regardless of the remaining interval's size.
+        if h < min_step and h < remaining:
             raise RuntimeError("adaptive solver step below min_step")
 
         stages: list[State] = []

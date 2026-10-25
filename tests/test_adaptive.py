@@ -89,6 +89,23 @@ def test_minimum_step_fails_on_impossible_tolerance():
                        rtol=1e-12, atol=1e-14, min_step=.9)
 
 
+@pytest.mark.parametrize("t1,dt,min_step", [
+    (1., .25, 1.),   # Remaining interval equals the minimum step.
+    (.5, .1, 1.),    # Remaining interval is shorter than the minimum step.
+])
+def test_minimum_step_applies_to_nonterminal_attempts(t1, dt, min_step):
+    # A sub-minimum step is permitted only if it reaches t1 immediately.
+    with pytest.raises(RuntimeError, match="step below min_step"):
+        solve_adaptive(lambda t, y: (0.,), (0.,), t1=t1, dt=dt,
+                       min_step=min_step)
+
+
+def test_final_remainder_can_be_less_than_minimum_step():
+    path = solve_adaptive(lambda t, y: (0.,), (0.,), t1=.25, dt=1.,
+                          min_step=1.).trajectory
+    assert path.times == (0., .25)
+
+
 @pytest.mark.parametrize("magnitude", [1e-300, 1e200])
 def test_weighted_rms_does_not_underflow_or_overflow_intermediate_squares(magnitude):
     # An exact two-component RMS for (+a,-a) equals |a| regardless of scale.
