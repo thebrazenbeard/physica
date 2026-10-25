@@ -37,6 +37,13 @@ python -m pytest -q
 The non-ML simulations require only Python's standard library. PyTorch is an
 optional dependency; the corresponding tests skip when unavailable.
 
+CI checks ordinary editable installs across Python 3.11–3.13, explicitly
+imports SciPy and PyTorch in their respective optional-dependency jobs so
+that missing reference/learning coverage fails instead of silently skipping,
+and installs the built wheel in a fresh environment outside the source tree.
+The wheel smoke test checks distribution import and a verifiable oscillator
+receipt; it does not constitute physical-model validation.
+
 ## Run
 
 ```bash
