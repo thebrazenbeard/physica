@@ -21,6 +21,17 @@ class EnergyReport:
 
 def energy_drift(trajectory: Trajectory, energy: Callable[[State], float],
                  *, tolerance: float = 1e-3) -> EnergyReport:
+    """Check drift relative to any nonzero starting energy, or absolute at zero.
+
+    Relative drift is dimensionless and invariant under energy-unit scaling,
+    but not under an additive shift of the energy zero. Choose and document
+    the model's physically meaningful energy reference before interpreting it.
+    An absolute check is necessary only when starting energy is exactly zero;
+    in that case `tolerance` has the same units as the supplied energy model.
+    An absolute or relative drift exceeding the finite binary64 range raises
+    ValueError instead of emitting infinity into strict JSON receipts.
+    Both criteria measure numerical behavior, not physical model validity.
+    """
     if not isfinite(tolerance) or tolerance < 0:
         raise ValueError("tolerance must be nonnegative and finite")
     levels = [float(energy(s)) for s in trajectory.states]
@@ -28,9 +39,14 @@ def energy_drift(trajectory: Trajectory, energy: Callable[[State], float],
         raise ValueError("energy produced a nonfinite value")
     baseline = levels[0]
     drift = max(abs(e - baseline) for e in levels)
-    # Relative error is undefined for zero-energy initial conditions.
-    # Use an explicitly identified absolute-energy criterion in that case.
-    relative = drift / abs(baseline) if abs(baseline) > 1e-12 else None
+    if not isfinite(drift):
+        raise ValueError("absolute energy drift exceeds representable range")
+    # No arbitrary near-zero cutoff: a tiny but nonzero initial energy still
+    # has a meaningful dimensionless relative drift. Absolute tolerance has
+    # physical energy units and only applies at exactly zero baseline.
+    relative = drift / abs(baseline) if baseline != 0. else None
+    if relative is not None and not isfinite(relative):
+        raise ValueError("relative energy drift exceeds representable range")
     criterion = "relative" if relative is not None else "absolute"
     passed = (relative if relative is not None else drift) <= tolerance
     return EnergyReport(baseline, levels[-1], drift, relative,
