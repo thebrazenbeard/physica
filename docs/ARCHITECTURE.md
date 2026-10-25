@@ -18,7 +18,8 @@ inverse -> scipy/numpy optional: known-mass oscillator parameter estimation
           frozen timestamp holdout + local sensitivity rank diagnostic
 
 spatial -> 2D AABB x-axis sweep + independent quadratic oracle
-           candidate overlaps ONLY; no narrow-phase or contact solver
+           conservative translation envelopes and analytic pairwise
+           simultaneous-overlap time intervals; no contact/response solver
 
 rl -> cart-pole model + RK4 + synthetic discrete-action environment
       tabular Q-learning with disjoint evaluation seeds
@@ -40,6 +41,12 @@ rl -> cart-pole model + RK4 + synthetic discrete-action environment
   Nothing here actuates physical machinery.
 - Numerical error and physical-model error are separate; a solver can be
   accurate for an incorrect model.
+- Swept spatial intervals describe overlap of translating AABB rectangles,
+  not physical shape contacts or impact impulses. Pairwise intersection uses
+  exact rational arithmetic over the finite binary64 inputs, not separately
+  rounded float-translated positions. Each pair has at most one interval;
+  returned float-valued times are rounded boundary estimates and must not
+  serve as exact contact-membership predicates at the last bit.
 - Physica has no dependency on the rest of the portfolio at runtime.
 
 ## Example equations
