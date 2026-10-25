@@ -17,8 +17,14 @@ class AABB:
     upper: tuple[float, float]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or not self.id:
+        if not isinstance(self.id, str):
             raise ValueError("AABB id must be a nonempty string")
+        # Strip a string subclass's overridden ordering/hash behavior without
+        # rejecting valid StrEnum or other string-compatible input values.
+        canonical_id = str.__str__(self.id)
+        if not canonical_id:
+            raise ValueError("AABB id must be a nonempty string")
+        object.__setattr__(self, "id", canonical_id)
         try:
             if len(self.lower) != 2 or len(self.upper) != 2:
                 raise ValueError("AABB must have 2D lower and upper coordinates")

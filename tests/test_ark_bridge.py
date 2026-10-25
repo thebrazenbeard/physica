@@ -1,4 +1,5 @@
 import math
+from collections.abc import Mapping
 
 import pytest
 
@@ -49,3 +50,41 @@ def test_requires_calibration_and_bounds():
         predict_ark_move(intention(), position_m=(0, 0),
                          calibration=MotionCalibration((1, 0), (0, 1)),
                          obstacles=(AABB("__ark_motion__", (0, 0), (1, 1)),))
+
+
+def test_intention_mapping_cannot_change_stick_after_validation():
+    class ChangingX(Mapping):
+        def __init__(self):
+            self.data = intention(x=.5, duration_ms=1000)
+            self.x_reads = 0
+
+        def __iter__(self):
+            return iter(self.data)
+
+        def __len__(self):
+            return len(self.data)
+
+        def __getitem__(self, key):
+            if key == "x":
+                self.x_reads += 1
+                return .5 if self.x_reads == 1 else 100.
+            return self.data[key]
+
+    action = ChangingX()
+    result = predict_ark_move(action, position_m=(0., 0.),
+                              calibration=MotionCalibration((1., 0.), (0., 1.)))
+    assert result.end_m == (.5, 0.)
+    assert action.x_reads == 1
+
+
+def test_calibration_snapshots_mutable_axis_lists():
+    x_axis = [1., 0.]
+    y_axis = [0., 1.]
+    calibration = MotionCalibration(x_axis, y_axis)
+    x_axis[0] = 100.
+    y_axis[1] = 100.
+    assert calibration.x_axis == (1., 0.)
+    assert calibration.y_axis == (0., 1.)
+    result = predict_ark_move(intention(duration_ms=1000), position_m=(0., 0.),
+                              calibration=calibration)
+    assert result.end_m == (1., 0.)

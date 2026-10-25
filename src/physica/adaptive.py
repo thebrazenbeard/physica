@@ -30,6 +30,18 @@ _B4 = (5179/57600, 0., 7571/16695, 393/640,
        -92097/339200, 187/2100, 1/40)
 
 
+def _stable_rms(values: Sequence[float]) -> float:
+    """Weighted RMS without squaring raw tiny or huge finite residuals."""
+    if not values:
+        raise ValueError("RMS requires at least one component")
+    largest = max(abs(value) for value in values)
+    if not isfinite(largest):
+        return inf
+    if largest == 0.:
+        return 0.
+    return largest * sqrt(sum((value / largest)**2 for value in values) / len(values))
+
+
 @dataclass(frozen=True)
 class AdaptiveResult:
     trajectory: Trajectory
@@ -116,7 +128,7 @@ def solve_adaptive(
             (a - b) / (atol + rtol * max(abs(yi), abs(a)))
             for a, b, yi in zip(high, low, y)
         ]
-        error = sqrt(sum(v*v for v in scaled_error) / len(y))
+        error = _stable_rms(scaled_error)
         if not isfinite(error):
             raise RuntimeError("nonfinite adaptive solver error")
 

@@ -156,6 +156,9 @@ been selected for this repository.
 
 ## Swept broad-phase candidates
 
+`AABB` identifiers are normalized to nonempty immutable built-in `str` values.
+String subclasses (including `StrEnum`) are accepted, but their overridden
+comparison/hash behavior is discarded to preserve canonical pair order.
 `AABB` stores immutable two-coordinate tuples. It accepts finite built-in
 `int`/`float` coordinates and snapshots two-item input lists; NumPy scalars,
 arrays, booleans and mutable custom numeric objects are not supported as
