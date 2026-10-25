@@ -9,6 +9,8 @@ from typing import Sequence
 
 @dataclass(frozen=True)
 class AABB:
+    """Immutable 2D bounds with finite built-in int/float coordinates."""
+
     id: str
     lower: tuple[float, float]
     upper: tuple[float, float]
@@ -16,12 +18,27 @@ class AABB:
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not self.id:
             raise ValueError("AABB id must be a nonempty string")
-        if len(self.lower) != 2 or len(self.upper) != 2:
-            raise ValueError("AABB must have 2D lower and upper coordinates")
-        if any(not isfinite(x) for x in self.lower + self.upper):
+        try:
+            if len(self.lower) != 2 or len(self.upper) != 2:
+                raise ValueError("AABB must have 2D lower and upper coordinates")
+            # A frozen dataclass does not freeze an aliased caller-owned list.
+            # Read exactly two coordinates and retain immutable tuples instead.
+            lower = (self.lower[0], self.lower[1])
+            upper = (self.upper[0], self.upper[1])
+        except (TypeError, IndexError, KeyError) as exc:
+            raise ValueError("AABB must have 2D lower and upper coordinates") from exc
+        if any(type(x) not in (int, float) for x in lower + upper):
+            raise ValueError("AABB coordinates must be finite built-in int/float numbers")
+        try:
+            finite = all(isfinite(x) for x in lower + upper)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("AABB coordinates must be finite numbers") from exc
+        if not finite:
             raise ValueError("AABB coordinates must be finite")
-        if any(lo > hi for lo, hi in zip(self.lower, self.upper)):
+        if any(lo > hi for lo, hi in zip(lower, upper)):
             raise ValueError("AABB bounds cannot be reversed")
+        object.__setattr__(self, "lower", lower)
+        object.__setattr__(self, "upper", upper)
 
 
 def _validate(bounds: Sequence[AABB]) -> tuple[AABB, ...]:
