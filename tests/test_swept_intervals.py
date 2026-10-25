@@ -160,3 +160,25 @@ def test_extreme_finite_relative_motion_does_not_overflow_interval_math():
     assert swept_aabb_intervals(boxes, motions) == (
         SweptAABBInterval(("a", "b"), 1., 1.),
     )
+
+
+def test_motion_mapping_is_snapshotted_once_for_consistent_geometry():
+    class ChangingMapping(dict):
+        def __init__(self):
+            super().__init__({"a": (2., 0.), "b": (0., 0.)})
+            self.reads = {"a": 0, "b": 0}
+
+        def __getitem__(self, key):
+            self.reads[key] += 1
+            # A repeated read silently changes the box trajectory.
+            if key == "a" and self.reads[key] > 1:
+                return (0., 0.)
+            return super().__getitem__(key)
+
+    boxes = (AABB("a", (0., 0.), (1., 1.)),
+             AABB("b", (2., 0.), (3., 1.)))
+    motions = ChangingMapping()
+    assert swept_aabb_intervals(boxes, motions) == (
+        SweptAABBInterval(("a", "b"), .5, 1.),
+    )
+    assert motions.reads == {"a": 1, "b": 1}
