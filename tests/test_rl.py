@@ -60,6 +60,36 @@ def test_tabular_q_learning_changes_value_from_reward():
     assert agent.q_value(s, 1) == pytest.approx(.5)
 
 
+def test_q_state_bucketing_bounds_extreme_but_finite_observations():
+    # A finite state is valid input; division by a small bucket scale must
+    # not overflow to infinity before the advertised [-12, 12] clipping.
+    extreme = (1e308, -1e308, 1e308, -1e308)
+    assert TabularQAgent._bucket(extreme) == (12, -12, 12, -12)
+    assert TabularQAgent().q_value(extreme, 0) == 0.
+
+
+def test_q_learning_rejects_overflowing_target_without_mutating_table():
+    s = (0., 0., 0., 0.)
+    agent = TabularQAgent(alpha=1., gamma=1., epsilon=0.)
+    experience = Transition(s, 0, 1e308, s, False, False, .02)
+    agent.learn(experience)
+    assert agent.q_value(s, 0) == 1e308
+    with pytest.raises(ValueError, match="representable"):
+        agent.learn(experience)
+    assert agent.q_value(s, 0) == 1e308
+
+
+def test_q_learning_rejects_overflowing_td_difference_without_mutation():
+    s = (0., 0., 0., 0.)
+    agent = TabularQAgent(alpha=1., gamma=0., epsilon=0.)
+    agent.learn(Transition(s, 1, 1e308, s, True, False, .02))
+    assert agent.q_value(s, 1) == 1e308
+    # The target and old Q are finite but subtraction can still overflow.
+    with pytest.raises(ValueError, match="representable"):
+        agent.learn(Transition(s, 1, -1e308, s, True, False, .02))
+    assert agent.q_value(s, 1) == 1e308
+
+
 def test_replay_buffer_fifo_and_auxiliary_targets():
     buffer = ReplayBuffer(capacity=3, seed=42)
     transitions = []
@@ -77,6 +107,37 @@ def test_replay_buffer_fifo_and_auxiliary_targets():
     reward, change = auxiliary_targets(transitions[-1])
     assert reward == 0.
     assert change == (1., 0., 0., 0.)
+
+
+def test_transition_snapshots_caller_mutable_states_for_replay_reproducibility():
+    observation = [0., .1, 0., 0.]
+    next_observation = [.2, .1, 0., 0.]
+    transition = Transition(observation, 1, 1., next_observation,
+                            False, False, .02)
+    replay = ReplayBuffer(capacity=2, seed=0)
+    replay.append(transition)
+    observation[0] = 99.
+    next_observation[0] = -99.
+    assert transition.observation == (0., .1, 0., 0.)
+    assert transition.next_observation == (.2, .1, 0., 0.)
+    assert replay.sample(1)[0].observation == (0., .1, 0., 0.)
+
+
+@pytest.mark.parametrize("invalid", [
+    {"reward": float("nan")}, {"reward": float("inf")},
+    {"dt": 0.}, {"dt": -1.}, {"dt": float("inf")},
+    {"action": True}, {"action": 2},
+    {"terminated": 1}, {"truncated": 0},
+    {"observation": (0., 0., float("nan"), 0.)},
+    {"next_observation": (0., 0.)},
+])
+def test_transition_rejects_nonfinite_or_malformed_experience(invalid):
+    valid = dict(observation=(0., 0., 0., 0.), action=0, reward=1.,
+                 next_observation=(0., 0., 0., 0.), terminated=False,
+                 truncated=False, dt=.02)
+    valid.update(invalid)
+    with pytest.raises(ValueError):
+        Transition(**valid)
 
 
 def test_reward_balanced_replay_is_bounded_and_reproducible():
