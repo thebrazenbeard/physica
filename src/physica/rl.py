@@ -25,6 +25,12 @@ def _state4(value: Sequence[float]) -> State4:
 
 @dataclass(frozen=True)
 class Transition:
+    """Immutable, finite discrete-action experience suitable for replay.
+
+    Caller-owned observation lists are copied into immutable four-float tuples.
+    A malformed experience is rejected before it can poison a Q-table or replay.
+    """
+
     observation: State4
     action: int
     reward: float
@@ -32,6 +38,31 @@ class Transition:
     terminated: bool
     truncated: bool
     dt: float
+
+    def __post_init__(self) -> None:
+        try:
+            observation = _state4(self.observation)
+            next_observation = _state4(self.next_observation)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("transition states must have four finite components") from exc
+        if type(self.action) is not int or self.action not in (-1, 0, 1):
+            raise ValueError("transition action must be one of -1, 0, or 1")
+        if type(self.terminated) is not bool or type(self.truncated) is not bool:
+            raise ValueError("transition terminated and truncated must be booleans")
+        try:
+            valid_scalars = (
+                type(self.reward) in (int, float) and isfinite(self.reward)
+                and type(self.dt) in (int, float) and isfinite(self.dt)
+                and self.dt > 0.
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("transition reward/dt must be finite, dt positive") from exc
+        if not valid_scalars:
+            raise ValueError("transition reward/dt must be finite, dt positive")
+        object.__setattr__(self, "observation", observation)
+        object.__setattr__(self, "next_observation", next_observation)
+        object.__setattr__(self, "reward", float(self.reward))
+        object.__setattr__(self, "dt", float(self.dt))
 
 
 @dataclass(frozen=True)
@@ -196,8 +227,18 @@ class TabularQAgent:
     def _bucket(obs: Sequence[float]) -> tuple[int, ...]:
         o = _state4(obs)
         scales = (.4, .6, .035, .6)
-        return tuple(max(-12, min(12, int(round(x / s))))
-                     for x, s in zip(o, scales))
+
+        def bounded(x: float, scale: float) -> int:
+            # Compare before division: even finite x/scale can overflow when
+            # x is huge, although it belongs in a clipped outermost bucket.
+            limit = 12 * scale
+            if x >= limit:
+                return 12
+            if x <= -limit:
+                return -12
+            return int(round(x / scale))
+
+        return tuple(bounded(x, s) for x, s in zip(o, scales))
 
     def q_value(self, observation: Sequence[float], action: int) -> float:
         if type(action) is not int or action not in (-1, 0, 1):
@@ -218,9 +259,17 @@ class TabularQAgent:
         future = (0. if transition.terminated
                   else max(self.q_value(transition.next_observation, action)
                            for action in (-1, 0, 1)))
-        target = transition.reward + self.gamma * future
+        discounted = self.gamma * future
+        target = transition.reward + discounted
+        td_error = target - old
+        updated = old + self.alpha * td_error
+        if not all(isfinite(value) for value in
+                   (old, future, discounted, target, td_error, updated)):
+            # Finite experience can still overflow during a temporal-difference
+            # update. Fail without committing an Inf/NaN to the Q-table.
+            raise ValueError("Q-learning update exceeds finite representable range")
         key = (self._bucket(transition.observation), transition.action)
-        self._q[key] = old + self.alpha * (target - old)
+        self._q[key] = updated
 
 
 def train_tabular_cartpole(
