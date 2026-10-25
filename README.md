@@ -173,6 +173,8 @@ intervals are intersected, so
 envelope candidates whose boxes never coincide in time are excluded.
 Edge and corner touching count as zero-duration overlap. Inputs use the same
 strict finite-motion and translated-endpoint checks as the conservative sweep.
+Each displacement is read once from the supplied mapping and held fixed for
+the calculation; this is not an atomic snapshot of a concurrently mutated map.
 
 Floating-point policy: contact predicates use exact-real arithmetic on the
 finite binary64 input values via Python rational arithmetic. Separately
