@@ -23,6 +23,54 @@ def test_rk4_has_expected_convergence_order():
     assert report.observed_order > 3.5
 
 
+def test_convergence_uses_actual_uniform_step_ratio():
+    # dt=.19 gives six coarse steps; dt/2 gives eleven fine steps.
+    # The numerical error ratio is not from an exact step-size halving.
+    report = convergence_report(lambda t, y: (y[0],),
+                                (1.,), (math.e,), dt=.19)
+    expected_order = math.log(report.coarse_error / report.fine_error) / math.log(11 / 6)
+    assert report.observed_order == pytest.approx(expected_order)
+    assert 3.8 < report.observed_order < 4.
+    assert report.passed
+
+
+def test_convergence_error_ratio_remains_finite_for_extreme_finite_errors(monkeypatch):
+    # Isolate the convergence estimator from the solver: both error magnitudes
+    # are finite, but the direct ratio 1e200 / 1e-200 overflows binary64.
+    paths = iter((
+        Trajectory((0., 1.), ((0.,), (1e200,)), "rk4"),
+        Trajectory((0., .5, 1.), ((0.,), (0.,), (1e-200,)), "rk4"),
+    ))
+    monkeypatch.setattr("physica.validation.integrate", lambda *a, **kw: next(paths))
+    report = convergence_report(lambda t, y: y, (0.,), (0.,), dt=.2)
+    expected = math.log2(1e200) - math.log2(1e-200)
+    assert math.isfinite(report.observed_order)
+    assert report.observed_order == pytest.approx(expected)
+    assert report.passed
+
+
+def test_convergence_does_not_claim_order_without_refinement():
+    # Both requested sizes lead to one actual step over [0, 1].
+    report = convergence_report(lambda t, y: (y[0],),
+                                (1.,), (math.e,), dt=3.)
+    assert report.observed_order is None
+    assert not report.passed
+
+
+def test_exact_both_grids_does_not_establish_convergence_order():
+    report = convergence_report(lambda t, y: (0.,),
+                                (1.,), (1.,), dt=.2)
+    assert report.coarse_error == report.fine_error == 0.
+    assert report.observed_order is None
+    assert not report.passed
+
+
+def test_adaptive_run_is_not_a_fixed_step_convergence_study():
+    with pytest.raises(ValueError, match="fixed-step"):
+        convergence_report(lambda t, y: (y[0],),
+                           (1.,), (math.e,), method="rk45")
+
+
 def test_euler_is_less_accurate_than_rk4():
     m = HarmonicOscillator()
     reference = math.cos(2.)
@@ -71,11 +119,29 @@ def test_trajectory_final_uneven_requested_step():
 
 @pytest.mark.parametrize("opts", [
     {"dt": 0.}, {"dt": -1.}, {"dt": math.nan},
-    {"t1": 0.}, {"t1": math.inf}, {"dt": 1e-9, "max_steps": 50}
+    {"t1": 0.}, {"t1": math.inf}, {"dt": 1e-9, "max_steps": 50},
+    {"max_steps": True},
 ])
 def test_time_fail_closed(opts):
     with pytest.raises(ValueError):
         integrate(lambda t, x: (1.,), (1.,), **opts)
+
+
+@pytest.mark.parametrize("opts", [
+    {"t0": -1e308, "t1": 1e308, "dt": 1.},
+    {"t1": 1., "dt": 5e-324, "max_steps": 10},
+])
+def test_fixed_step_count_extremes_fail_with_bounded_error(opts):
+    with pytest.raises(ValueError):
+        integrate(lambda t, x: (0.,), (1.,), **opts)
+
+
+def test_short_representable_interval_still_gets_one_step():
+    tiny = 5e-324
+    path = integrate(lambda t, x: (0.,), (1.,), t1=tiny, dt=1e100,
+                     max_steps=1)
+    assert path.times == (0., tiny)
+    assert path.states == ((1.,), (1.,))
 
 
 @pytest.mark.parametrize("state", [(math.nan,), (math.inf,), ()])

@@ -53,13 +53,20 @@ def _steps(t0: float, t1: float, dt: float, max_steps: int):
         raise ValueError("time bounds and step must be finite")
     if dt <= 0 or t1 <= t0:
         raise ValueError("requires dt > 0 and t1 > t0")
-    if not isinstance(max_steps, int) or max_steps < 1:
+    if type(max_steps) is not int or max_steps < 1:
         raise ValueError("max_steps must be positive")
-    count = ceil((t1 - t0) / dt)
-    if count > max_steps:
+    span = t1 - t0
+    if not isfinite(span):
+        raise ValueError("integration time span exceeds finite range")
+    requested_steps = span / dt
+    if requested_steps > max_steps:
         raise ValueError("integration exceeds max_steps")
+    # A representable positive span still requires one step when span/dt
+    # underflows to zero; check the upper bound before converting to int so
+    # an overflowing ratio raises ValueError instead of OverflowError.
+    count = max(1, ceil(requested_steps))
     # Uniform partition avoids a tiny terminal step caused by roundoff.
-    step = (t1 - t0) / count
+    step = span / count
     return count, step
 
 
