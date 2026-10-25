@@ -164,3 +164,27 @@ The randomized oracle samples 21 instants in multiple moving-body scenes
 and checks that every independent sampled overlap is included in candidates.
 The sampling is evidence for the tested configurations, not a formal proof of
 all continuous trajectories.
+
+`physica.spatial.swept_aabb_intervals(bounds, displacements)` additionally
+returns sorted `SweptAABBInterval(pair, enter_time, exit_time)` records for
+**simultaneous** closed overlap intervals of moving AABB pairs, with time
+normalized to `[0, 1]` and at most one interval per pair. Analytic per-axis
+intervals are intersected, so
+envelope candidates whose boxes never coincide in time are excluded.
+Edge and corner touching count as zero-duration overlap. Inputs use the same
+strict finite-motion and translated-endpoint checks as the conservative sweep.
+Each displacement is read once from the supplied mapping and held fixed for
+the calculation; this is not an atomic snapshot of a concurrently mutated map.
+
+Floating-point policy: contact predicates use exact-real arithmetic on the
+finite binary64 input values via Python rational arithmetic. Separately
+rounded float translations can disagree: `1.0 + 0.1 == 1.1` in Python, but
+those particular binary64 values do **not** touch in exact arithmetic at
+`t=1`; the interval routine correctly excludes that pair. An exactly
+representable touch (such as `1.0 + 0.125 == 1.125`) remains included.
+Returned float-valued interval endpoints are rounded approximations of exact
+rational times; they are **not** exact membership predicates at the final bit
+near a boundary. No broad numerical epsilon is used. This is a bounded
+small-scene research routine, not an optimized large-world spatial index.
+Intervals remain geometric AABB overlaps, not impulse/contact solutions or
+validated physical time-of-impact predictions.
