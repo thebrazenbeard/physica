@@ -49,16 +49,33 @@ class ConvergenceReport:
 def convergence_report(rhs, initial, exact_final: State, *, t0: float = 0.,
                        t1: float = 1., dt: float = .2, method: str = "rk4",
                        min_order: float = 3.5) -> ConvergenceReport:
-    """Compare exact-solution errors at h and h/2; exact solution is caller-supplied."""
+    """Compare fixed-step errors using the actual uniform-grid refinement ratio.
+
+    The integrator partitions the interval with ceil(span/dt), so the actual
+    coarse/fine step-size ratio need not equal two. An unchanged partition
+    has no measurable convergence order. Adaptive initial-step guesses do
+    not constitute a fixed-step convergence study.
+    """
     if not isfinite(min_order) or min_order < 0:
         raise ValueError("min_order must be finite and nonnegative")
-    coarse = integrate(rhs, initial, t0=t0, t1=t1, dt=dt, method=method).final
-    fine = integrate(rhs, initial, t0=t0, t1=t1, dt=dt / 2, method=method).final
+    if method not in {"euler", "rk4"}:
+        raise ValueError("convergence report requires a fixed-step method")
+    coarse_path = integrate(rhs, initial, t0=t0, t1=t1, dt=dt, method=method)
+    fine_path = integrate(rhs, initial, t0=t0, t1=t1, dt=dt / 2, method=method)
+    coarse, fine = coarse_path.final, fine_path.final
     exact = tuple(float(x) for x in exact_final)
     if len(exact) != len(coarse) or not all(isfinite(x) for x in exact):
         raise ValueError("exact_final must be finite and match state dimension")
     a = max(abs(x - y) for x, y in zip(coarse, exact))
     b = max(abs(x - y) for x, y in zip(fine, exact))
-    order = log2(a / b) if a > 0 and b > 0 else None
-    passed = b <= a and (order is not None and order >= min_order or a == b == 0)
+    coarse_steps = len(coarse_path.times) - 1
+    fine_steps = len(fine_path.times) - 1
+    # Same span means h_coarse/h_fine == fine_steps/coarse_steps.
+    refined = fine_steps > coarse_steps
+    # Work in log space: the quotient a / b can overflow even when both
+    # error magnitudes are finite and their observed order is representable.
+    order = ((log2(a) - log2(b)) / log2(fine_steps / coarse_steps)
+             if refined and a > 0 and b > 0 else None)
+    # Exactly zero errors at both resolutions provide no measurable order.
+    passed = refined and b <= a and order is not None and order >= min_order
     return ConvergenceReport(a, b, order, min_order, passed)
