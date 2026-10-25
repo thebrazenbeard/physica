@@ -89,6 +89,22 @@ def test_minimum_step_fails_on_impossible_tolerance():
                        rtol=1e-12, atol=1e-14, min_step=.9)
 
 
+@pytest.mark.parametrize("magnitude", [1e-300, 1e200])
+def test_weighted_rms_does_not_underflow_or_overflow_intermediate_squares(magnitude):
+    # An exact two-component RMS for (+a,-a) equals |a| regardless of scale.
+    from physica.adaptive import _stable_rms
+    assert _stable_rms((magnitude, -magnitude)) == magnitude
+
+
+def test_huge_finite_error_rejects_trial_before_budget_exhaustion():
+    # All seven stage outputs stay finite; the old direct `v*v` RMS overflowed
+    # before the solver could account for its first rejected attempt.
+    rhs = lambda t, y: (1e170 * t**4,)
+    with pytest.raises(RuntimeError, match="max_attempts"):
+        solve_adaptive(rhs, (0.,), t1=1., dt=1., rtol=1e-200,
+                       atol=1., max_attempts=1)
+
+
 def test_adaptive_experiment_receipt_is_explicit_and_reproducible():
     a = simulate("oscillator", initial=(1., 0.), t1=10., dt=1.,
                  method="rk45", include_trajectory=False)
