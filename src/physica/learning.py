@@ -6,6 +6,7 @@ of the equations imposed as training losses.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from math import pi, isfinite
 
 
@@ -15,6 +16,11 @@ def _torch():
     except ImportError as exc:
         raise RuntimeError("Install Physica with the 'learn' extra to enable PyTorch") from exc
     return torch
+
+
+def _default_device_is_cpu(torch) -> bool:
+    """Use a no-RNG tensor factory; torch.get_default_device needs Torch 2.3+."""
+    return torch.empty(0).device.type == "cpu"
 
 
 @dataclass(frozen=True)
@@ -28,19 +34,60 @@ class PINNReport:
     boundary_max_error: float
 
 
+def _poisson_holdout_rationals(collocation: int) -> tuple[Fraction, ...]:
+    """199 interior samples disjoint from i/(collocation+1) in exact arithmetic.
+
+    If one equalled a training coordinate, multiplication by 400*(n+1)
+    would give 2*i*(n+1)+1 = 400*j: odd equals even, impossible.
+    """
+    return tuple(Fraction(i, 200) + Fraction(1, 400 * (collocation + 1))
+                 for i in range(1, 200))
+
+
+def _poisson_holdout_grid(torch, training, collocation: int):
+    """Also eliminate any equality introduced by binary64 rounding."""
+    samples = torch.tensor(
+        [float(value) for value in _poisson_holdout_rationals(collocation)],
+        dtype=training.dtype, device=training.device,
+    )
+    collocation_points = training.detach().reshape(-1)
+    while True:
+        indices = torch.searchsorted(collocation_points, samples)
+        in_range = indices < collocation_points.numel()
+        collision = in_range & (collocation_points[
+            indices.clamp(max=collocation_points.numel() - 1)
+        ] == samples)
+        if not bool(collision.any()):
+            break
+        samples[collision] = torch.nextafter(
+            samples[collision], torch.ones_like(samples[collision]))
+        if not bool((samples < 1.).all()):
+            raise FloatingPointError("no interior representable holdout sample")
+    if not bool((samples[1:] > samples[:-1]).all()):
+        raise FloatingPointError("binary64 holdout samples not strictly increasing")
+    return samples.unsqueeze(1)
+
+
 def train_poisson(*, steps: int = 250, hidden: int = 24,
                   collocation: int = 32, seed: int = 0, lr: float = 1e-3):
     """PINN for -u''(x) = pi² sin(pi*x), x in (0,1), u(0)=u(1)=0.
 
-    Analytic held-out reference: u(x)=sin(pi*x). Hard boundary ansatz
+    Analytic spatial holdout reference: u(x)=sin(pi*x), sampled away from
+    the training collocation coordinates. Hard boundary ansatz
     u=x(1-x)N(x) so endpoints are enforced regardless of optimizer.
-    Returns (trained torch.nn.Module, PINNReport); not a validated PDE solver.
+    Requires CPU as PyTorch's default device for isolated seeded training;
+    it does not support accelerator-default training. Returns (trained
+    torch.nn.Module, PINNReport); not a validated PDE solver.
     """
     torch = _torch()
     if steps <= 0 or hidden < 2 or collocation < 2 or lr <= 0:
         raise ValueError("invalid training configuration")
+    if type(seed) is not int:
+        raise ValueError("seed must be an integer")
+    if not _default_device_is_cpu(torch):
+        raise ValueError("train_poisson requires a CPU default device")
     with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(seed)
+        torch.default_generator.manual_seed(seed)
         net = torch.nn.Sequential(
             torch.nn.Linear(1, hidden),
             torch.nn.Tanh(),
@@ -80,7 +127,7 @@ def train_poisson(*, steps: int = 250, hidden: int = 24,
     uxx = torch.autograd.grad(ux.sum(), x, create_graph=True)[0]
     final = float(torch.mean((-uxx - pi**2 * torch.sin(pi * x))**2).detach())
     with torch.no_grad():
-        holdout = torch.linspace(.005, .995, 199, dtype=torch.float64).unsqueeze(1)
+        holdout = _poisson_holdout_grid(torch, x, collocation)
         reference = torch.sin(pi * holdout)
         prediction = model(holdout)
         relative = float(torch.linalg.vector_norm(prediction - reference) /
@@ -119,15 +166,24 @@ def torch_rk4(rhs, initial, *, t0: float = 0., t1: float = 1., steps: int = 20):
 
 
 def neural_oscillator(*, mass: float = 1., stiffness: float = 1.,
-                      damping: float = 0., hidden: int = 16):
+                      damping: float = 0., hidden: int = 16,
+                      seed: int | None = None):
     """Construct physical baseline + learnable acceleration residual network.
 
     The residual can violate energy conservation. Use held-out validation
-    before treating its predictions as scientific evidence.
+    before treating its predictions as scientific evidence. An explicit seed
+    reproducibly initializes the residual network on a CPU default device
+    without changing the caller's PyTorch random state. Move the returned
+    model to another device after initialization if needed. Without a seed,
+    standard PyTorch initialization and random-state behavior are preserved.
     """
     torch = _torch()
     if not all(isfinite(v) for v in (mass, stiffness, damping)) or mass <= 0 or stiffness <= 0 or damping < 0 or hidden < 2:
         raise ValueError("invalid oscillator configuration")
+    if seed is not None and type(seed) is not int:
+        raise ValueError("seed must be an integer or None")
+    if seed is not None and not _default_device_is_cpu(torch):
+        raise ValueError("seeded initialization requires a CPU default device")
 
     class NeuralOscillator(torch.nn.Module):
         def __init__(self):
@@ -146,4 +202,10 @@ def neural_oscillator(*, mass: float = 1., stiffness: float = 1.,
             accel = accel + self.correction(state).squeeze(-1)
             return torch.stack((v, accel), dim=-1)
 
-    return NeuralOscillator()
+    if seed is None:
+        return NeuralOscillator()
+    with torch.random.fork_rng(devices=[]):
+        # torch.manual_seed would also reseed CUDA/MPS/XPU generators, which
+        # are deliberately not included in this CPU-only fork.
+        torch.default_generator.manual_seed(seed)
+        return NeuralOscillator()

@@ -7,7 +7,7 @@ SciPy and NumPy are optional dependencies, imported only for fitting.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, cosh, exp, hypot, isfinite, sin, sinh, sqrt
+from math import cos, exp, expm1, hypot, isfinite, sin, sqrt
 from random import Random
 from typing import Sequence
 
@@ -72,10 +72,26 @@ def _analytic_displacement(
     core = v0 + decay * x0
     if disc > 0:
         w = sqrt(disc)
-        return exp(-decay * time) * (x0 * cos(w * time) + core * sin(w * time) / w)
+        phase = w * time
+        # Evaluate sin(w*t)/w as t*sinc(w*t) near zero. Forming w*t may
+        # underflow to zero although the displacement v0*t is representable.
+        if abs(phase) < 1e-4:
+            phase2 = phase * phase
+            sine_over_w = time * (1. - phase2 / 6. + phase2 * phase2 / 120.)
+        else:
+            sine_over_w = sin(phase) / w
+        return exp(-decay * time) * (x0 * cos(phase) + core * sine_over_w)
     if disc < 0:
         w = sqrt(-disc)
-        return exp(-decay * time) * (x0 * cosh(w * time) + core * sinh(w * time) / w)
+        # Factor out the slow eigenmode: cosh(w*t) and sinh(w*t) overflow
+        # separately for strongly overdamped, long-running trajectories even
+        # when the physical displacement remains finite. The rationalized
+        # slow rate also avoids subtracting two nearly equal large rates.
+        slow_rate = -(stiffness / mass) / (decay + w)
+        fast_fraction = -.5 * expm1(-2. * w * time)
+        return exp(slow_rate * time) * (
+            x0 * (1. - fast_fraction) + (core / w) * fast_fraction
+        )
     return exp(-decay * time) * (x0 + core * time)
 
 

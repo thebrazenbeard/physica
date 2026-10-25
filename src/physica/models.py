@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, isfinite, sin
+from math import cos, frexp, inf, isfinite, ldexp, sin
 from typing import Callable
 
 from .numerics import State
@@ -16,6 +16,25 @@ def _positive(name: str, value: float) -> None:
 def _nonnegative(name: str, value: float) -> None:
     if not isfinite(value) or value < 0:
         raise ValueError(f"{name} must be nonnegative and finite")
+
+
+def _scaled_nonnegative_product(*factors: float) -> float:
+    """Multiply nonnegative floats without overflowing compensating factors.
+
+    Keep each factor's binary exponent separate until the final rounding. This
+    also preserves subnormal results when tiny factors are offset by large ones.
+    """
+    if any(value == 0. for value in factors):
+        return 0.
+    mantissa, exponent = 1., 0
+    for value in factors:
+        fraction, power = frexp(value)
+        mantissa *= fraction
+        exponent += power
+    try:
+        return ldexp(mantissa, exponent)
+    except OverflowError:
+        return inf
 
 
 @dataclass(frozen=True)
@@ -68,7 +87,26 @@ class Pendulum:
 
     def energy(self, state: State) -> float:
         theta, omega = state
-        return .5 * self.mass * (self.length * omega)**2 + self.mass * self.gravity * self.length * (1 - cos(theta))
+        # 1-cos(theta) loses all significance near theta=0; the half-angle
+        # identity preserves tiny but physically nonzero potential energies.
+        # Delay multiplication until the end: even finite physical energies
+        # can otherwise have overflowing intermediate mass/length products.
+        kinetic = _scaled_nonnegative_product(.5, self.mass, self.length,
+                                              self.length, abs(omega), abs(omega))
+        if abs(theta) < 1e-3:
+            # Halving a subnormal theta can itself round to zero. Retain raw
+            # theta factors; only the well-conditioned Taylor correction uses
+            # theta**2, whose underflow here is harmless.
+            theta_sq = theta * theta
+            correction = .5 - theta_sq / 24. + theta_sq * theta_sq / 720.
+            potential = _scaled_nonnegative_product(
+                self.mass, self.gravity, self.length,
+                abs(theta), abs(theta), correction)
+        else:
+            half_sine = abs(sin(theta / 2.))
+            potential = _scaled_nonnegative_product(2., self.mass, self.gravity,
+                                                    self.length, half_sine, half_sine)
+        return kinetic + potential
 
     @property
     def conservative(self) -> bool:
