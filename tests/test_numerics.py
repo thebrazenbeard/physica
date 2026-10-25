@@ -5,6 +5,7 @@ import pytest
 from physica.numerics import Trajectory, integrate, velocity_verlet
 from physica.models import HarmonicOscillator, Pendulum, CartPole, controlled_cartpole
 from physica.validation import energy_drift, convergence_report
+from physica.experiment import simulate
 
 
 def test_rk4_oscillator_matches_analytic_solution():
@@ -52,6 +53,54 @@ def test_zero_initial_energy_uses_absolute_criterion():
     assert report.criterion == "absolute"
     assert report.max_relative_drift is None
     assert report.passed
+
+
+@pytest.mark.parametrize("energy_scale", [1e-6, 1e-13, 1e-150, 5e-324])
+def test_nonzero_initial_energy_uses_relative_drift_at_any_scale(energy_scale):
+    # The dimensionless numerical discrepancy is identical at every scale:
+    # initial E0 > 0 doubles to 2*E0, a 100% conservation-diagnostic drift.
+    tr = Trajectory((0., 1.), ((1.,), (2.,)), "energy-fixture")
+    report = energy_drift(tr, lambda state: energy_scale * state[0],
+                          tolerance=1e-3)
+    assert report.criterion == "relative"
+    assert report.max_relative_drift == pytest.approx(1.)
+    assert not report.passed
+
+
+def test_exact_zero_energy_remains_an_absolute_drift_check():
+    tr = Trajectory((0., 1.), ((0.,), (1.,)), "energy-fixture")
+    report = energy_drift(tr, lambda state: 1e-8 * state[0],
+                          tolerance=1e-7)
+    assert report.criterion == "absolute"
+    assert report.max_relative_drift is None
+    assert report.max_absolute_drift == pytest.approx(1e-8)
+    assert report.passed
+
+
+def test_relative_energy_drift_beyond_binary64_fails_before_serialization():
+    # Both energies are finite, but their relative change is not representable.
+    tr = Trajectory((0., 1.), ((0.,), (1.,)), "energy-fixture")
+    def energy(state):
+        return 5e-324 if state[0] == 0. else 1.
+    with pytest.raises(ValueError, match="relative energy drift exceeds representable range"):
+        energy_drift(tr, energy)
+
+
+def test_absolute_energy_drift_beyond_binary64_fails_before_serialization():
+    # The difference between opposite finite extremes overflows to infinity.
+    tr = Trajectory((0., 1.), ((0.,), (1.,)), "energy-fixture")
+    def energy(state):
+        return -1e308 if state[0] == 0. else 1e308
+    with pytest.raises(ValueError, match="absolute energy drift exceeds representable range"):
+        energy_drift(tr, energy)
+
+
+def test_extreme_simulation_energy_drift_fails_explicitly_before_receipt_hashing():
+    # A finite-energy oscillator trial can have a relative energy drift beyond
+    # binary64. A precise exception must precede strict JSON receipt hashing.
+    with pytest.raises(ValueError, match="relative energy drift exceeds representable range"):
+        simulate("oscillator", initial=(3e-162, 0.), t1=1e50, dt=1e50,
+                 include_trajectory=False)
 
 
 def test_damped_oscillator_dissipates_energy():
