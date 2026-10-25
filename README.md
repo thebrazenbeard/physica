@@ -156,6 +156,12 @@ are swept through one abstract step. The algorithm returns sorted candidate
 ID pairs, conservatively enclosing possible overlap at any intermediate time.
 It is deterministic and side-effect free.
 
+The swept envelope boundaries are evaluated using exact rational arithmetic
+over the supplied finite integers and binary64 floats. In particular,
+large integer coordinates must not be rounded inward by mixed int/float
+endpoint addition before broad-phase pruning. Translated endpoints that
+overflow the finite binary64 range remain invalid inputs.
+
 This is **not** time-of-impact, real contacts, impulse dynamics, or a collision
 response solver. Its envelope can report pairs that never coincide in time.
 No physical-world effect or ARK runtime binding is authorized.
