@@ -46,6 +46,15 @@ def test_malformed_receipts_fail_closed():
     assert not verify_receipt(None)
 
 
+def test_pathologically_nested_receipt_returns_false_not_recursion_error():
+    # Content hashes may arrive from caller-supplied Python objects. The
+    # verifier's public Boolean contract must survive JSON depth exhaustion.
+    payload = 0
+    for _ in range(20_000):
+        payload = [payload]
+    assert not verify_receipt({"sha256": "0" * 64, "payload": payload})
+
+
 def test_receipt_with_summary_still_valid():
     a = simulate("oscillator", initial=(1., 0.), include_trajectory=False)
     assert "trajectory" not in a
