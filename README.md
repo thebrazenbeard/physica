@@ -149,6 +149,11 @@ been selected for this repository.
 
 ## Swept broad-phase candidates
 
+`AABB` stores immutable two-coordinate tuples. It accepts finite built-in
+`int`/`float` coordinates and snapshots two-item input lists; NumPy scalars,
+arrays, booleans and mutable custom numeric objects are not supported as
+coordinates. Convert such values deliberately before constructing an AABB.
+
 `physica.spatial.swept_broad_phase_pairs(bounds, displacements)` accepts the
 same immutable 2D `AABB` values as `broad_phase_pairs`, plus **exactly one**
 finite displacement tuple per box identifier. Linear translation envelopes
