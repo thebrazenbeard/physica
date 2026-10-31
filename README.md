@@ -2,10 +2,10 @@
 
 **Physics-aware computation, with numerical evidence ahead of neural claims.**
 
-Physica is a Python research foundation for physics-informed machine learning,
-differentiable differential equations, and simulated embodied dynamics. This
-repository began as a one-paragraph concept on October 13, 2026. The first
-implementation provides mechanical reference models, fixed-step and adaptive
+Physica is a Python research library for reproducible numerical mechanics,
+physics-informed machine learning, differentiable differential equations,
+and simulated embodied dynamics. Version 0.3.0 provides mechanical reference
+models, fixed-step and adaptive
 nonstiff ODE solvers, synthetic inverse-parameter estimation, 2D collision
 candidate detection, a bounded simulated reinforcement-learning environment,
 a reproducible Poisson PINN benchmark, and differentiable PyTorch dynamics.
@@ -13,6 +13,10 @@ a reproducible Poisson PINN benchmark, and differentiable PyTorch dynamics.
 **Status: executable V0.3 research foundation. Not a scientifically validated
 general-purpose physics engine, autonomous physical controller, or safety-rated
 simulation package.**
+
+**Redistribution status:** The repository currently has no project-wide
+license grant. Public source visibility does not itself permit redistribution,
+commercial reuse, or incorporation into another product.
 
 ## Install
 
@@ -121,11 +125,9 @@ assert check.passed and order.passed
 
 ## Research and provenance
 
-All **93 repositories** in the connected owner portfolio were structurally
-audited, including **23 private repositories**. The private audit is kept
-outside this public repository. Relevant *public* donor ideas are traced in
+Relevant public design influences and numerical assumptions are documented in
 [Research and provenance](docs/RESEARCH_AND_PROVENANCE.md), with source commit
-bindings; no proprietary portfolio code was copied. External frameworks
+bindings. External frameworks
 including DeepXDE, PhysicsNeMo, NeuralPDE, PyTorch, and torchdiffeq were
 researched for architectures and failure modes. SciPy DOP853 provides an
 independent numerical reference in the optional `reference` test extra.
@@ -151,8 +153,8 @@ Physica still has no stiff/implicit solver, dense event solver, finite-element
 solver, full PDE suite, hardware actuator interface, or calibrated physical
 uncertainty model.
 
-Current source code is independently implemented. No license grant has yet
-been selected for this repository.
+Current source code is independently implemented. As noted above, no
+project-wide reuse license has yet been selected.
 
 ## Swept broad-phase candidates
 
