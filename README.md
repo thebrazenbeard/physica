@@ -209,3 +209,9 @@ near a boundary. No broad numerical epsilon is used. This is a bounded
 small-scene research routine, not an optimized large-world spatial index.
 Intervals remain geometric AABB overlaps, not impulse/contact solutions or
 validated physical time-of-impact predictions.
+
+## Editor startup containment — tracked source (2026-11-20)
+
+The tracked `main` source formerly contained a concealed VS Code `folderOpen` task invoking obfuscated `.vscode/ini` through Node. The task list is now empty, `task.allowAutomaticTasks` is explicitly `"off"`, and the obfuscated file is removed from this source tree. Historical Git source remains for investigation.
+
+**Limits:** This is source-only containment, not proof that older checkouts, editor extensions, user/global settings, local credentials, or any previous host execution are safe. Do not execute historical suspect assets.
